@@ -62,10 +62,8 @@ auto MyFunction(napi_env env, napi_callback_info info) {
 }
 
 napi_value initialize (napi_env env, napi_callback_info info) {
-  /+
   import core.runtime;
   rt_init();
-  +/
   return 0.toNapiValue (env);
 }
 
@@ -74,27 +72,32 @@ napi_value testoDesu (napi_env env, napi_callback_info info) {
 }
 
 napi_value module_init(napi_env env, napi_value exports) {
-  napi_status status;
-  napi_value fn;
-
-  status = napi_create_function(env, null, 0, &testoDesu, null, &fn);
-  if (status != napi_status.napi_ok) {
-    napi_throw_error(env, null, "Unable to wrap native function");
+  auto addFunction (alias Function)() {
+    napi_status status;
+    napi_value fn;
+    status = napi_create_function(env, null, 0, &Function, null, &fn);
+    if (status != napi_status.napi_ok) {
+      napi_throw_error(env, null, "Unable to wrap native function");
+    } else {
+      import std.string : toStringz;
+      string fnName = Function.mangleof;
+      status = napi_set_named_property(env, exports, fnName.toStringz, fn);
+      if (status != napi_status.napi_ok) {
+        napi_throw_error(env, null, (
+          "Unable to populate exports for " ~ fnName).toStringz
+        );
+      }
+    }
+    return status;
   }
-
-  status = napi_set_named_property(env, exports, "my_function", fn);
-  if (status != napi_status.napi_ok) {
-    napi_throw_error(env, null, "Unable to populate exports (my_function)");
+  auto addFunctions (Functions ...) () {
+    static foreach (Function; Functions) {
+      if (addFunction!Function () != napi_status.napi_ok) {
+        return;
+      } 
+    }
   }
-
-  status = napi_create_function(env, null, 0, &initialize, null, &fn);
-  if (status != napi_status.napi_ok) {
-    napi_throw_error(env, null, "Unable to wrap native function");
-  }
-  status = napi_set_named_property(env, exports, "initialize", fn);
-  if (status != napi_status.napi_ok) {
-    napi_throw_error(env, null, "Unable to populate exports (initialize)");
-  }
+  addFunctions!(initialize, testoDesu);
   return exports;
 }
 
