@@ -25,15 +25,6 @@ alias napi_threadsafe_function_call_js = void function (napi_env env,
                                                  napi_value js_callback,
                                                  void* context,
                                                  void* data);
-napi_status napi_throw_type_error(napi_env env,
-                                         const char* code,
-                                         const char* msg);
-napi_status napi_throw_range_error(napi_env env,
-                                         const char* code,
-                                         const char* msg);
-napi_status napi_is_error(napi_env env,
-                                      napi_value value,
-                                      bool* result);
 enum napi_threadsafe_function_release_mode {
   napi_tsfn_release,
   napi_tsfn_abort

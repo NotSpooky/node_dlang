@@ -4,6 +4,7 @@ import js_native_api;
 
 import std.conv : to;
 import std.string : toStringz;
+import std.traits;
 
 extern (C):
 napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
@@ -37,8 +38,27 @@ template toNapi (T) {
   }
 }
 
-auto napi_identity (napi_env _1, napi_value value) {
-  return value;
+auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
+  *toRet = value;
+  return napi_status.napi_ok;
+}
+
+alias ExternC(T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
+alias ExternD(T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
+
+// Note: env must be alive when calling the function.
+auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRet) {
+  *toRet = () {
+    napi_value global;
+    napi_status status = napi_get_global(env, &global);
+    if (status != napi_status.napi_ok) return;
+    immutable argCount = 0;
+    napi_value [argCount] args;
+    size_t argCountMut = argCount;
+    napi_value returned;
+    napi_call_function (env, global, func, argCountMut, args.ptr, &returned);
+  };
+  return napi_status.napi_ok;
 }
 
 T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
@@ -50,7 +70,9 @@ T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
   } else static if (is (T == long)) {
     alias cv = napi_get_value_int64;
   } else static if (is (T == napi_value)) {
-    alias cv = napi_identity;
+    alias cv = napiIdentity;
+  } else static if (is (T == void delegate ())) {
+    alias cv = jsFunction;
   } else {
     static assert (0, `Not implemented: Convertion from JS type for ` ~ T.stringof);
   }
@@ -72,16 +94,14 @@ napi_value toNapiValue (F)(
   return toRet;
 }
 
-import std.traits;
-
 auto fromJs (alias Function) (napi_env env, napi_callback_info info) {
   alias FunParams = Parameters!Function;
-  immutable size_t argCount = FunParams.length;
+  immutable argCount = FunParams.length;
   napi_value [argCount] argVals;
   size_t argCountMut = argCount;
   auto status = napi_get_cb_info(env, info, &argCountMut, argVals.ptr, null, null);
   if (status != napi_status.napi_ok) {
-    napi_throw_error (
+    napi_throw_type_error (
       env
       , null
       , (`Failed to parse arguments for function ` ~ Function.mangleof ~ `, incorrect amount?`).toStringz
