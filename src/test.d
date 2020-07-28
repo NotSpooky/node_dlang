@@ -71,35 +71,43 @@ napi_value testoDesu (napi_env env, napi_callback_info info) {
   return MyFunction(env, info).toNapiValue (env);
 }
 
-napi_value module_init(napi_env env, napi_value exports) {
-  auto addFunction (alias Function)() {
-    napi_status status;
-    napi_value fn;
-    status = napi_create_function(env, null, 0, &Function, null, &fn);
-    if (status != napi_status.napi_ok) {
-      napi_throw_error(env, null, "Unable to wrap native function");
-    } else {
-      import std.string : toStringz;
-      string fnName = Function.mangleof;
-      status = napi_set_named_property(env, exports, fnName.toStringz, fn);
+mixin template exportToJs (Functions ...) {
+  napi_value exportToJs (napi_env env, napi_value exports) {
+    auto addFunction (alias Function)() {
+      alias ValidType = typeof (initialize);
+      static assert (
+        is (
+          typeof(Function) == ValidType
+        )
+        , `exportToJs requires functions of type ` ~ ValidType.stringof
+      );
+      napi_status status;
+      napi_value fn;
+      status = napi_create_function(env, null, 0, &Function, null, &fn);
       if (status != napi_status.napi_ok) {
-        napi_throw_error(env, null, (
-          "Unable to populate exports for " ~ fnName).toStringz
-        );
+        napi_throw_error(env, null, "Unable to wrap native function");
+      } else {
+        import std.string : toStringz;
+        string fnName = Function.mangleof;
+        status = napi_set_named_property(env, exports, fnName.toStringz, fn);
+        if (status != napi_status.napi_ok) {
+          napi_throw_error(env, null, (
+            "Unable to populate exports for " ~ fnName).toStringz
+          );
+        }
       }
+      return status;
     }
-    return status;
-  }
-  auto addFunctions (Functions ...) () {
     static foreach (Function; Functions) {
       if (addFunction!Function () != napi_status.napi_ok) {
-        return;
+        return exports;
       } 
     }
+    return exports;
   }
-  addFunctions!(initialize, testoDesu);
-  return exports;
 }
+
+mixin exportToJs!(initialize, testoDesu);
 
 // enum NODE_GYP_MODULE_NAME = "module";
 // extern (C) export auto _module = NAPI_MODULE(NODE_GYP_MODULE_NAME.ptr, &Init);
