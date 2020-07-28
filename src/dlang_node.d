@@ -102,6 +102,10 @@ auto fromJs (alias Function) (napi_env env, napi_callback_info info) {
 }
 
 mixin template exportToJs (Functions ...) {
+  import node_api;
+  import js_native_api;
+  import std.string : toStringz;
+
   template ReturnsNapiValue (alias Function) {
     enum ReturnsNapiValue = is (ReturnType!Function == napi_value);
   }
@@ -155,15 +159,3 @@ mixin template exportToJs (Functions ...) {
     return exports;
   }
 }
-
-auto initialize () {
-  import core.runtime;
-  rt_init();
-  return 0;
-}
-
-auto testoDesu(int first, long second) {
-  return [first, second * 5];
-}
-
-mixin exportToJs!(initialize, testoDesu);
