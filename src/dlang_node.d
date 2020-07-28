@@ -46,16 +46,53 @@ alias ExternD(T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
 
 // Note: env must be alive when calling the function.
 auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRet) {
+  napi_value global;
+  napi_status status = napi_get_global(env, &global);
+  if (status != napi_status.napi_ok) return status;
   *toRet = () {
-    napi_value global;
-    napi_status status = napi_get_global(env, &global);
-    if (status != napi_status.napi_ok) return;
     immutable argCount = 0;
     napi_value [argCount] args;
     size_t argCountMut = argCount;
     napi_value returned;
     napi_call_function (env, global, func, argCountMut, args.ptr, &returned);
   };
+  return napi_status.napi_ok;
+}
+
+struct Example {
+  napi_status delegate (double x, double y, double width, double height) drawRect;
+}
+auto getProto (napi_env env, napi_value obj, Example * toRet) {
+  // Using a reference might not be needed.
+  napi_value global;
+  napi_status status = napi_get_global(env, &global);
+  if (status != napi_status.napi_ok) return status;
+  napi_ref reference;
+  status = napi_create_reference(env, obj, 1, &reference);
+  if (status != napi_status.napi_ok) return status;
+  napi_value key;
+  string keyS = `fillRect`;
+  status = napi_create_string_utf8 (env, keyS.ptr, keyS.length, &key);
+  if (status != napi_status.napi_ok) return status;
+  napi_value rect;
+  status = napi_get_property (env, obj, key, &rect);
+  if (status != napi_status.napi_ok) return status;
+  napi_value [4] args;
+  args [0] = 10.0.toNapiValue (env);
+  args [1] = 20.0.toNapiValue (env);
+  args [2] = 30.0.toNapiValue (env);
+  args [3] = 40.0.toNapiValue (env);
+  *toRet = Example (
+    (double x, double y, double width, double height) {
+      napi_value obj; // Shadows other one.
+      napi_get_reference_value (env, reference, &obj);
+      if (status != napi_status.napi_ok) return status;
+      napi_value returned;
+      status = napi_call_function (env, obj, rect, args.length, args.ptr, &returned);
+      if (status != napi_status.napi_ok) return status;
+      return status;
+    }
+  );
   return napi_status.napi_ok;
 }
 
@@ -71,6 +108,8 @@ T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
     alias cv = napiIdentity;
   } else static if (is (T == void delegate ())) {
     alias cv = jsFunction;
+  } else static if (is (T == Example)) {
+    alias cv = getProto;
   } else {
     static assert (0, `Not implemented: Convertion from JS type for ` ~ T.stringof);
   }

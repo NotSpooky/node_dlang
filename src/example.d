@@ -1,4 +1,5 @@
 import dlang_node;
+pragma(LDC_no_moduleinfo);
 
 extern (C):
 auto initialize () {
@@ -20,4 +21,10 @@ auto callbackExample (ExternD!(void delegate ()) callback) {
   callback ();
 }
 
-mixin exportToJs!(initialize, kumiko, fumiko, callbackExample);
+auto rectExample (Example ex) {
+  import std.stdio;
+  ex.drawRect (13,24,30,60);
+  return 5;
+}
+
+mixin exportToJs!(initialize, kumiko, fumiko, callbackExample, rectExample);
