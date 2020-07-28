@@ -83,13 +83,25 @@ T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
   return toRet;
 }
 
+void throwInJS (napi_env env, string message) {
+  napi_throw_error (env, null, message.toStringz);
+}
+
 napi_value toNapiValue (F)(
   F toCast, napi_env env
 ) {
   napi_value toRet;
   auto status = toNapi!F(env, toCast, &toRet);
   if (status != napi_status.napi_ok) {
-    napi_throw_error(env, null, "Unable to create return value");
+    env.throwInJS (`Unable to create return value`);
+  }
+  return toRet;
+}
+
+napi_value toNapiValue (napi_env env) {
+  napi_value toRet;
+  if (napi_get_undefined (env, &toRet) != napi_status.napi_ok) {
+    env.throwInJS (`Unable to return void (undefined in JS)`);
   }
   return toRet;
 }
@@ -126,8 +138,8 @@ mixin template exportToJs (Functions ...) {
   import js_native_api;
   import std.string : toStringz;
 
-  template ReturnsNapiValue (alias Function) {
-    enum ReturnsNapiValue = is (ReturnType!Function == napi_value);
+  template Returns (alias Function, OtherType) {
+    enum Returns = is (ReturnType!Function == OtherType);
   }
   template WrappedFunctionName (alias Function) {
     enum WrappedFunctionName = `dlangnapi_` ~ Function.mangleof;
@@ -135,13 +147,24 @@ mixin template exportToJs (Functions ...) {
   static foreach (Function; Functions) {
     // If the function doesn't manually return a napi_value, create a function
     // that casts to napi_value.
-    static if (! ReturnsNapiValue!Function) {
+    static if (! Returns! (Function, napi_value)) {
       // Create a function that casts the D type to JS one.
       // That will be the function actually added to exports.
+
       mixin (`napi_value ` ~ WrappedFunctionName!Function
-          ~ q{ (napi_env env, napi_callback_info info) {
-          return fromJs!Function (env, info).toNapiValue (env);
-        }; }
+          ~ `(napi_env env, napi_callback_info info) {`
+        ~ (Returns! (Function, void) // Check whether function returns or not.
+            // This version returns a napi_value with undefined.
+            ? q{
+                fromJs!Function (env, info);
+                return toNapiValue (env); // Return undefined to JS.
+              }
+            // This version casts the returned D value to an napi_value
+            : q{
+                return fromJs!Function (env, info).toNapiValue (env);
+              }
+          )
+        ~ `}`
       );
     }
   }
@@ -149,7 +172,7 @@ mixin template exportToJs (Functions ...) {
     auto addFunction (alias Function)() {
       napi_status status;
       napi_value fn;
-      static if (ReturnsNapiValue!Function) {
+      static if (Returns! (Function, napi_value)) {
         alias FunToBind = Function;
       } else {
         // Use wrapper made above whose function returns a napi_value

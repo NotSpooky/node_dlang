@@ -20,7 +20,6 @@ auto callbackExample (ExternD!(void delegate ()) callback) {
   callback ();
   callback ();
   callback ();
-  return 0;
 }
 
 mixin exportToJs!(initialize, kumiko, fumiko, callbackExample);
