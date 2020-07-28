@@ -30,6 +30,8 @@ template toNapi (F) {
     alias toNapi = napi_create_int64;
   } else static if (is (F == T[], T)) {
     alias toNapi = arrayToNapi;
+  } else {
+    static assert (0, `Not implemented: Conversion to JS type for ` ~ F.stringof);
   }
 }
 
@@ -44,7 +46,7 @@ napi_value toNapiValue (F)(
   return toRet;
 }
 
-auto MyFunction(napi_env env, napi_callback_info info) {
+auto testoDesu(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value [1] argv;
   auto status = napi_get_cb_info(env, info, &argc, argv.ptr, null, null);
@@ -67,28 +69,43 @@ napi_value initialize (napi_env env, napi_callback_info info) {
   return 0.toNapiValue (env);
 }
 
-napi_value testoDesu (napi_env env, napi_callback_info info) {
-  return MyFunction(env, info).toNapiValue (env);
-}
-
 mixin template exportToJs (Functions ...) {
+  template ReturnsNapiValue (alias Function) {
+    enum ReturnsNapiValue = is (ReturnType!Function == napi_value);
+  }
+  template WrappedFunctionName (alias Function) {
+    enum WrappedFunctionName = `dlangnapi_` ~ Function.mangleof;
+  }
+  static foreach (Function; Functions) {
+    import std.traits;
+    // If the function doesn't manually return a napi_value, create a function
+    // that casts to napi_value.
+    static if (! ReturnsNapiValue!Function) {
+      // Create a function that casts the D type to JS one.
+      // That will be the function actually added to exports.
+      mixin (`napi_value ` ~ WrappedFunctionName!Function
+          ~ q{ (napi_env env, napi_callback_info info) {
+          return Function (env, info).toNapiValue (env);
+        }; }
+      );
+    }
+  }
   napi_value exportToJs (napi_env env, napi_value exports) {
     auto addFunction (alias Function)() {
-      alias ValidType = typeof (initialize);
-      static assert (
-        is (
-          typeof(Function) == ValidType
-        )
-        , `exportToJs requires functions of type ` ~ ValidType.stringof
-      );
       napi_status status;
       napi_value fn;
-      status = napi_create_function(env, null, 0, &Function, null, &fn);
+      static if (ReturnsNapiValue!Function) {
+        alias FunToBind = Function;
+      } else {
+        // Use wrapper made above whose function returns a napi_value
+        mixin (`alias FunToBind = ` ~ WrappedFunctionName!Function ~ `;`);
+      }
+      status = napi_create_function(env, null, 0, &FunToBind, null, &fn);
       if (status != napi_status.napi_ok) {
         napi_throw_error(env, null, "Unable to wrap native function");
       } else {
         import std.string : toStringz;
-        string fnName = Function.mangleof;
+        const fnName = Function.mangleof;
         status = napi_set_named_property(env, exports, fnName.toStringz, fn);
         if (status != napi_status.napi_ok) {
           napi_throw_error(env, null, (
