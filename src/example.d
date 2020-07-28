@@ -1,6 +1,6 @@
 import dlang_node;
-extern (C):
 
+extern (C):
 auto initialize () {
   import core.runtime;
   rt_init();
@@ -13,8 +13,6 @@ auto kumiko(int first, long second) {
 auto fumiko () {
   return 6;
 }
-import std.traits;
-alias ExternD(T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
 
 auto callbackExample (ExternD!(void delegate ()) callback) {
   callback ();

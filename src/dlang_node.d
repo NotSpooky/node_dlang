@@ -6,7 +6,6 @@ import std.conv : to;
 import std.string : toStringz;
 import std.traits;
 
-extern (C):
 napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
   napi_status status = napi_status.napi_generic_failure;
   assert (toRet != null);
@@ -43,7 +42,6 @@ auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
   return napi_status.napi_ok;
 }
 
-alias ExternC(T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
 alias ExternD(T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
 
 // Note: env must be alive when calling the function.
@@ -139,6 +137,7 @@ mixin template exportToJs (Functions ...) {
   import std.string : toStringz;
 
   template Returns (alias Function, OtherType) {
+    import std.traits : ReturnType;
     enum Returns = is (ReturnType!Function == OtherType);
   }
   template WrappedFunctionName (alias Function) {
@@ -151,7 +150,7 @@ mixin template exportToJs (Functions ...) {
       // Create a function that casts the D type to JS one.
       // That will be the function actually added to exports.
 
-      mixin (`napi_value ` ~ WrappedFunctionName!Function
+      mixin (`extern (C) napi_value ` ~ WrappedFunctionName!Function
           ~ `(napi_env env, napi_callback_info info) {`
         ~ (Returns! (Function, void) // Check whether function returns or not.
             // This version returns a napi_value with undefined.
@@ -168,7 +167,7 @@ mixin template exportToJs (Functions ...) {
       );
     }
   }
-  napi_value exportToJs (napi_env env, napi_value exports) {
+  extern (C) napi_value exportToJs (napi_env env, napi_value exports) {
     auto addFunction (alias Function)() {
       napi_status status;
       napi_value fn;
