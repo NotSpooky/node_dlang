@@ -108,12 +108,25 @@ struct JSobj (Funs...){
   enum typeMsg = `JSObj template args should be pairs of strings with function types`;
   static assert (Funs.length % 2 == 0, typeMsg);
   static foreach (i; 0..Funs.length/2) {
-    // Add function that simply uses callNapi.
-    mixin (q{
-      napi_value } ~ Funs [i * 2] ~ q{(Parameters!(Funs [1 + i * 2]) args){
-        return callNapi (env, context, funs [i], args);
-      }
-    });
+    static if (isFunctionPointer!(Funs [1 + i * 2])) {
+      // Add function that simply uses callNapi.
+      mixin (q{
+        napi_value } ~ Funs [i * 2] ~ q{(Parameters!(Funs [1 + i * 2]) args) {
+          return callNapi (env, context, funs [i], args);
+        }
+      });
+    } else {
+      // Add field
+
+      // Setter.
+      mixin (q{
+        void } ~ Funs [i * 2] ~ q{(Funs [1 + i * 2] toSet) {
+          auto asNapi = toSet.toNapiValue (env);
+          auto propName = Funs [i * 2].toStringz;
+          napi_set_named_property (env, this.context, propName, asNapi);
+        }
+      });
+    }
   }
 }
 
