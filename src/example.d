@@ -21,10 +21,29 @@ auto callbackExample (ExternD!(void delegate ()) callback) {
   callback ();
 }
 
-auto rectExample (CanvasRenderingContext2D ex) {
-  import std.stdio;
-  ex.fillRect (13,24,30,600);
+// Dechare methods of an object like this.
+alias CanvasRenderingContext2D = JSobj!(
+  `beginPath`, void function ()
+  , `moveTo`, void function (double x, double y)
+  , `stroke`, void function ()
+  , `fill`, void function ()
+  , `lineTo`, void function (double x, double y)
+  , `fillRect`, void function (double x, double y, double width, double height)
+);
+
+// Can use them just receiving an object of that type :D
+auto canvasExample (CanvasRenderingContext2D ctx) {
+  with (ctx) {
+    beginPath ();
+    moveTo (5, 10);
+    lineTo (300, 150);
+    stroke (); 
+  }
   return 444;
 }
 
-mixin exportToJs!(initialize, kumiko, fumiko, callbackExample, rectExample);
+auto logExample (Console console) {
+  console.log (`Honk honk`);
+}
+
+mixin exportToJs!(initialize, kumiko, fumiko, callbackExample, canvasExample, logExample);

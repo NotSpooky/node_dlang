@@ -77,14 +77,6 @@ auto callNapi (Args ...)(napi_env env, napi_value context, napi_value func, Args
   return returned;
 }
 
-auto log (Args ...)(napi_env env, Args args) {
-  napi_value global, console, log;
-  napi_status status = napi_get_global (env, &global);
-  napi_get_named_property (env, global, "console", &console);
-  napi_get_named_property (env, console, "log", &log);
-  callNapi (env, console, log, args);
-}
-
 // Get a property.
 auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
   napi_value toRet;
@@ -97,9 +89,9 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
 }
 
 // Example:
-// JSObj!(`multByTwo`, int function (int input), `printNum`, void function (int i))
+// JSobj!(`multByTwo`, int function (int input), `printNum`, void function (int i))
 // Creates a struct with methods multByTwo and printNum of the respective types.
-struct JSObj (Funs...){
+struct JSobj (Funs...){
   napi_env env;
   napi_value context;
   napi_value [Funs.length] funs;
@@ -125,35 +117,13 @@ struct JSObj (Funs...){
   }
 }
 
-alias CanvasRenderingContext2D = JSObj!(
-  `fillRect`, void function (double x, double y, double width, double height)
+alias Console = JSobj!(
+  `log`, void function (string str)
 );
 
-/+
-struct CanvasRenderingContext2D {
-  napi_env env;
-  napi_ref contextRef;
-  napi_value context;
-  napi_value fun;
-  this (napi_env env, napi_value context) {
-    this.env = env;
-    this.context = context;
-    this.fun = context.p (env, `fillRect`);
-    // TODO: Free
-    this.contextRef = reference (env, context);
-  }
-  napi_value drawRect (double x, double y, double width, double height) {
-    auto context = val (env, contextRef);
-    return callNapi (env, context, fun, x, y, width, height);
-  }
-}+/
-
-// TODO: Make a mixin that adds the fun name field, initializes it on the constructor
-// and adds the respective calls
-
-auto getCanvasCtx2D (napi_env env, napi_value canvasCtx, CanvasRenderingContext2D * toRet) {
+auto getJSobj (T)(napi_env env, napi_value ctx, T * toRet) {
   assert (toRet != null);
-  *toRet = CanvasRenderingContext2D (env, canvasCtx);
+  *toRet = T (env, ctx);
   return napi_status.napi_ok;
 }
 
@@ -169,8 +139,8 @@ T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
     alias cv = napiIdentity;
   } else static if (is (T == void delegate ())) {
     alias cv = jsFunction;
-  } else static if (is (T == CanvasRenderingContext2D)) {
-    alias cv = getCanvasCtx2D;
+  } else static if (__traits(isSame, TemplateOf!(T), JSobj)) {
+    alias cv = getJSobj;
   } else {
     static assert (0, `Not implemented: Convertion from JS type for ` ~ T.stringof);
   }
