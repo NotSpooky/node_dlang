@@ -59,14 +59,14 @@ auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRe
   return napi_status.napi_ok;
 }
 
-struct Example {
+struct CanvasRenderingContext2D {
   napi_status delegate (double x, double y, double width, double height) drawRect;
 }
-auto getProto (napi_env env, napi_value obj, Example * toRet) {
-  // Using a reference might not be needed.
+auto getProto (napi_env env, napi_value obj, CanvasRenderingContext2D * toRet) {
   napi_value global;
   napi_status status = napi_get_global(env, &global);
   if (status != napi_status.napi_ok) return status;
+  // TODO: Free
   napi_ref reference;
   status = napi_create_reference(env, obj, 1, &reference);
   if (status != napi_status.napi_ok) return status;
@@ -82,11 +82,12 @@ auto getProto (napi_env env, napi_value obj, Example * toRet) {
   args [1] = 20.0.toNapiValue (env);
   args [2] = 30.0.toNapiValue (env);
   args [3] = 40.0.toNapiValue (env);
-  *toRet = Example (
+  *toRet = CanvasRenderingContext2D (
     (double x, double y, double width, double height) {
       napi_value obj; // Shadows other one.
       napi_get_reference_value (env, reference, &obj);
       if (status != napi_status.napi_ok) return status;
+      assert (obj != null);
       napi_value returned;
       status = napi_call_function (env, obj, rect, args.length, args.ptr, &returned);
       if (status != napi_status.napi_ok) return status;
@@ -108,7 +109,7 @@ T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
     alias cv = napiIdentity;
   } else static if (is (T == void delegate ())) {
     alias cv = jsFunction;
-  } else static if (is (T == Example)) {
+  } else static if (is (T == CanvasRenderingContext2D)) {
     alias cv = getProto;
   } else {
     static assert (0, `Not implemented: Convertion from JS type for ` ~ T.stringof);

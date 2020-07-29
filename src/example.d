@@ -21,7 +21,7 @@ auto callbackExample (ExternD!(void delegate ()) callback) {
   callback ();
 }
 
-auto rectExample (Example ex) {
+auto rectExample (CanvasRenderingContext2D ex) {
   import std.stdio;
   ex.drawRect (13,24,30,60);
   return 5;
