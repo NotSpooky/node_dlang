@@ -28,22 +28,6 @@ napi_status stringToNapi (napi_env env, string toCast, napi_value * toRet) {
   return napi_create_string_utf8 (env, toCast.ptr, toCast.length, toRet);
 }
 
-template toNapi (T) {
-  static if (is (T == double)) {
-    alias toNapi = napi_create_double;
-  } else static if (is (T == int)) {
-    alias toNapi = napi_create_int32;
-  } else static if (is (T == long)) {
-    alias toNapi = napi_create_int64;
-  } else static if (is (T == string)) {
-    alias toNapi = stringToNapi;
-  } else static if (is (T == A[], A)) {
-    alias toNapi = arrayToNapi;
-  } else {
-    static assert (0, `Not implemented: Conversion to JS type for ` ~ T.stringof);
-  }
-}
-
 auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
   *toRet = value;
   return napi_status.napi_ok;
@@ -111,24 +95,25 @@ auto log (Args ...)(napi_env env, Args args) {
   callNapi (env, console, log, args);
 }
 
+// Get a property.
+auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
+  napi_value toRet;
+  auto key = propName.toNapiValue (env);
+  auto status = napi_get_property (env, obj, key, &toRet);
+  if (status != napi_status.napi_ok) {
+    throw new Exception (`Failed to get property ` ~ propName);
+  }
+  return toRet;
+}
+
 auto getCanvasCtx2D (napi_env env, napi_value canvasCtx, CanvasRenderingContext2D * toRet) {
   // TODO: Free
   auto canvasCtxRef = Reference (env, canvasCtx);
-  auto key = `fillRect`.toNapiValue (env);
-  napi_value fillRect;
-  auto status = napi_get_property (env, canvasCtx, key, &fillRect);
-  napi_valuetype type;
-  napi_typeof (env, fillRect, &type);
-  if (status != napi_status.napi_ok) return status;
-  auto fillRectRef = Reference (env, canvasCtx);
-  napi_value [4] args;
+  napi_value fillRect = canvasCtx.p (env, `fillRect`);
   *toRet = CanvasRenderingContext2D (
     (double x, double y, double width, double height) {
       try {
         napi_value canvasCtx = canvasCtxRef.val (); // Shadows outer.
-        napi_typeof (env, canvasCtx, &type);
-        napi_typeof (env, fillRect, &type);
-        
         return callNapi (env, canvasCtx, fillRect, x, y, width, height);
       } catch (Exception ex) {
         throwInJS (env, ex.msg);
@@ -167,13 +152,29 @@ void throwInJS (napi_env env, string message) {
   napi_throw_error (env, null, message.toStringz);
 }
 
+template toNapi (T) {
+  static if (is (T == double)) {
+    alias toNapi = napi_create_double;
+  } else static if (is (T == int)) {
+    alias toNapi = napi_create_int32;
+  } else static if (is (T == long)) {
+    alias toNapi = napi_create_int64;
+  } else static if (is (T == string)) {
+    alias toNapi = stringToNapi;
+  } else static if (is (T == A[], A)) {
+    alias toNapi = arrayToNapi;
+  } else {
+    static assert (0, `Not implemented: Conversion to JS type for ` ~ T.stringof);
+  }
+}
+
 napi_value toNapiValue (F)(
   F toCast, napi_env env
 ) {
   napi_value toRet;
   auto status = toNapi!F(env, toCast, &toRet);
   if (status != napi_status.napi_ok) {
-    env.throwInJS (`Unable to create JS value: ` ~ toCast.to!string);
+    env.throwInJS (`Unable to create JS value for: ` ~ toCast.to!string);
   }
   return toRet;
 }
