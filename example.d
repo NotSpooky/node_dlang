@@ -1,9 +1,6 @@
 import dlang_node;
 pragma(LDC_no_moduleinfo);
 
-import std.demangle;
-pragma(msg, demangle (`_D10dlang_node10jsFunctionFPS19js_native_api_types10napi_env__PSQBj12napi_value__PDFZvZEQCh11napi_status`));
-
 extern (C):
 auto initialize () {
   import core.runtime;
