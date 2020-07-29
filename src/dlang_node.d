@@ -54,25 +54,19 @@ struct CanvasRenderingContext2D {
   napi_value delegate (double x, double y, double width, double height) drawRect;
 }
 
-struct Reference {
-  // Note: Non-object types such as function don't work as expected.
-  // I.e. might get the this object instead.
-  @disable this ();
-  napi_ref reference;
-  napi_env env;
-  auto this (napi_env env, napi_value obj) {
-    this.env = env;
-    auto status = napi_create_reference (env, obj, 1, &this.reference);
-    if (status != napi_status.napi_ok) throw new Exception (`Reference creation failed`);
-  }
-  // Note this might escape values out of scope
-  auto val () {
-    napi_value toRet;
-    auto status = napi_get_reference_value (env, this.reference, &toRet);
-    if (status != napi_status.napi_ok) throw new Exception (`Could not get value from reference`);
-    assert (toRet != null);
-    return toRet;
-  }
+auto reference (napi_env env, napi_value obj) {
+  napi_ref toRet;
+  auto status = napi_create_reference (env, obj, 1, &toRet);
+  if (status != napi_status.napi_ok) throw new Exception (`Reference creation failed`);
+  return toRet;
+}
+// Note this might escape values out of scope
+auto val (napi_env env, napi_ref reference) {
+  napi_value toRet;
+  auto status = napi_get_reference_value (env, reference, &toRet);
+  if (status != napi_status.napi_ok) throw new Exception (`Could not get value from reference`);
+  assert (toRet != null);
+  return toRet;
 }
 
 // Will assume void ret for now
@@ -106,20 +100,21 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
   return toRet;
 }
 
+auto genFunc (string funName, Args ...)(
+  napi_env env, napi_value context, napi_ref contextRef
+) {
+  auto fun = context.p (env, funName);
+  return (Args args) {
+    napi_value context = val (env, contextRef); // Shadows outer context.
+    return callNapi (env, context, fun, args);
+  };
+}
+
 auto getCanvasCtx2D (napi_env env, napi_value canvasCtx, CanvasRenderingContext2D * toRet) {
   // TODO: Free
-  auto canvasCtxRef = Reference (env, canvasCtx);
-  napi_value fillRect = canvasCtx.p (env, `fillRect`);
+  auto canvasCtxRef = reference (env, canvasCtx);
   *toRet = CanvasRenderingContext2D (
-    (double x, double y, double width, double height) {
-      try {
-        napi_value canvasCtx = canvasCtxRef.val (); // Shadows outer.
-        return callNapi (env, canvasCtx, fillRect, x, y, width, height);
-      } catch (Exception ex) {
-        throwInJS (env, ex.msg);
-        return napi_value ();
-      }
-    }
+    genFunc! (`fillRect`, double, double, double, double) (env, canvasCtx, canvasCtxRef)
   );
   return napi_status.napi_ok;
 }
