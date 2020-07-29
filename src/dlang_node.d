@@ -50,10 +50,6 @@ auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRe
   return napi_status.napi_ok;
 }
 
-struct CanvasRenderingContext2D {
-  napi_value delegate (double x, double y, double width, double height) drawRect;
-}
-
 auto reference (napi_env env, napi_value obj) {
   napi_ref toRet;
   auto status = napi_create_reference (env, obj, 1, &toRet);
@@ -100,22 +96,64 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
   return toRet;
 }
 
-auto genFunc (string funName, Args ...)(
-  napi_env env, napi_value context, napi_ref contextRef
-) {
-  auto fun = context.p (env, funName);
-  return (Args args) {
-    napi_value context = val (env, contextRef); // Shadows outer context.
-    return callNapi (env, context, fun, args);
-  };
+// Example:
+// JSObj!(`multByTwo`, int function (int input), `printNum`, void function (int i))
+// Creates a struct with methods multByTwo and printNum of the respective types.
+struct JSObj (Funs...){
+  napi_env env;
+  napi_value context;
+  napi_value [Funs.length] funs;
+  this (napi_env env, napi_value context) {
+    this.env = env;
+    this.context = context;
+    auto ctxRef = reference (env, context);
+    // Fill funs.
+    static foreach (i; 0..Funs.length/2) {
+      static assert (is (typeof (Funs [i * 2]) == string), typeMsg);
+      funs [i] = context.p (env, Funs [i * 2]);
+    }
+  }
+  enum typeMsg = `JSObj template args should be pairs of strings with function types`;
+  static assert (Funs.length % 2 == 0, typeMsg);
+  static foreach (i; 0..Funs.length/2) {
+    // Add function that simply uses callNapi.
+    mixin (q{
+      napi_value } ~ Funs [i * 2] ~ q{(Parameters!(Funs [1 + i * 2]) args){
+        return callNapi (env, context, funs [i], args);
+      }
+    });
+  }
 }
 
+alias CanvasRenderingContext2D = JSObj!(
+  `fillRect`, void function (double x, double y, double width, double height)
+);
+
+/+
+struct CanvasRenderingContext2D {
+  napi_env env;
+  napi_ref contextRef;
+  napi_value context;
+  napi_value fun;
+  this (napi_env env, napi_value context) {
+    this.env = env;
+    this.context = context;
+    this.fun = context.p (env, `fillRect`);
+    // TODO: Free
+    this.contextRef = reference (env, context);
+  }
+  napi_value drawRect (double x, double y, double width, double height) {
+    auto context = val (env, contextRef);
+    return callNapi (env, context, fun, x, y, width, height);
+  }
+}+/
+
+// TODO: Make a mixin that adds the fun name field, initializes it on the constructor
+// and adds the respective calls
+
 auto getCanvasCtx2D (napi_env env, napi_value canvasCtx, CanvasRenderingContext2D * toRet) {
-  // TODO: Free
-  auto canvasCtxRef = reference (env, canvasCtx);
-  *toRet = CanvasRenderingContext2D (
-    genFunc! (`fillRect`, double, double, double, double) (env, canvasCtx, canvasCtxRef)
-  );
+  assert (toRet != null);
+  *toRet = CanvasRenderingContext2D (env, canvasCtx);
   return napi_status.napi_ok;
 }
 
