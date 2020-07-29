@@ -23,8 +23,8 @@ auto callbackExample (ExternD!(void delegate ()) callback) {
 
 auto rectExample (CanvasRenderingContext2D ex) {
   import std.stdio;
-  ex.drawRect (13,24,30,60);
-  return 5;
+  ex.drawRect (13,24,300,60).writeln (" <- Called");
+  return 999;
 }
 
 mixin exportToJs!(initialize, kumiko, fumiko, callbackExample, rectExample);

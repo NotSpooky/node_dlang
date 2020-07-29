@@ -5,6 +5,7 @@ import js_native_api;
 import std.conv : to;
 import std.string : toStringz;
 import std.traits;
+debug import std.stdio;
 
 napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
   napi_status status = napi_status.napi_generic_failure;
@@ -23,6 +24,10 @@ napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
   return status;
 }
 
+napi_status stringToNapi (napi_env env, string toCast, napi_value * toRet) {
+  return napi_create_string_utf8 (env, toCast.ptr, toCast.length, toRet);
+}
+
 template toNapi (T) {
   static if (is (T == double)) {
     alias toNapi = napi_create_double;
@@ -30,6 +35,8 @@ template toNapi (T) {
     alias toNapi = napi_create_int32;
   } else static if (is (T == long)) {
     alias toNapi = napi_create_int64;
+  } else static if (is (T == string)) {
+    alias toNapi = stringToNapi;
   } else static if (is (T == A[], A)) {
     alias toNapi = arrayToNapi;
   } else {
@@ -44,7 +51,7 @@ auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
 
 alias ExternD(T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
 
-// Note: env must be alive when calling the function.
+// Note: func must be alive.
 auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRet) {
   napi_value global;
   napi_status status = napi_get_global(env, &global);
@@ -60,50 +67,73 @@ auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRe
 }
 
 struct CanvasRenderingContext2D {
-  napi_status delegate (double x, double y, double width, double height) drawRect;
+  napi_value delegate (double x, double y, double width, double height) drawRect;
 }
 
 struct Reference {
+  // Note: Non-object types such as function don't work as expected.
+  // I.e. might get the this object instead.
   @disable this ();
   napi_ref reference;
   napi_env env;
   auto this (napi_env env, napi_value obj) {
     this.env = env;
-    auto status = napi_create_reference (env, obj, 1, &reference);
+    auto status = napi_create_reference (env, obj, 1, &this.reference);
     if (status != napi_status.napi_ok) throw new Exception (`Reference creation failed`);
   }
   // Note this might escape values out of scope
   auto val () {
     napi_value toRet;
-    auto status = napi_get_reference_value (env, reference, &toRet);
+    auto status = napi_get_reference_value (env, this.reference, &toRet);
     if (status != napi_status.napi_ok) throw new Exception (`Could not get value from reference`);
     assert (toRet != null);
     return toRet;
   }
 }
 
+// Will assume void ret for now
+auto callNapi (Args ...)(napi_env env, napi_value context, napi_value func, Args args) {
+  napi_value [args.length] napiArgs;
+  static foreach (i, arg; args) {
+    napiArgs [i] = arg.toNapiValue (env);
+  }
+  napi_value returned;
+  auto status = napi_call_function (env, context, func, args.length, napiArgs.ptr, &returned);
+  if (status != napi_status.napi_ok) throw new Exception (`Call errored`);
+  return returned;
+}
+
+auto log (Args ...)(napi_env env, Args args) {
+  napi_value global, console, log;
+  napi_status status = napi_get_global (env, &global);
+  napi_get_named_property (env, global, "console", &console);
+  napi_get_named_property (env, console, "log", &log);
+  callNapi (env, console, log, args);
+}
+
 auto getCanvasCtx2D (napi_env env, napi_value canvasCtx, CanvasRenderingContext2D * toRet) {
   // TODO: Free
   auto canvasCtxRef = Reference (env, canvasCtx);
-  napi_value key;
-  string keyS = `fillRect`;
-  auto status = napi_create_string_utf8 (env, keyS.ptr, keyS.length, &key);
-  if (status != napi_status.napi_ok) return status;
+  auto key = `fillRect`.toNapiValue (env);
   napi_value fillRect;
-  status = napi_get_property (env, canvasCtx, key, &fillRect);
+  auto status = napi_get_property (env, canvasCtx, key, &fillRect);
+  napi_valuetype type;
+  napi_typeof (env, fillRect, &type);
   if (status != napi_status.napi_ok) return status;
   auto fillRectRef = Reference (env, canvasCtx);
   napi_value [4] args;
-  args [0] = 10.0.toNapiValue (env);
-  args [1] = 20.0.toNapiValue (env);
-  args [2] = 30.0.toNapiValue (env);
-  args [3] = 40.0.toNapiValue (env);
   *toRet = CanvasRenderingContext2D (
     (double x, double y, double width, double height) {
-      napi_value canvasCtx = canvasCtxRef.val (); // Shadows outer.
-      napi_value fillRect = fillRectRef.val ();
-      napi_value returned;
-      return napi_call_function (env, canvasCtx, fillRect, args.length, args.ptr, &returned);
+      try {
+        napi_value canvasCtx = canvasCtxRef.val (); // Shadows outer.
+        napi_typeof (env, canvasCtx, &type);
+        napi_typeof (env, fillRect, &type);
+        
+        return callNapi (env, canvasCtx, fillRect, x, y, width, height);
+      } catch (Exception ex) {
+        throwInJS (env, ex.msg);
+        return napi_value ();
+      }
     }
   );
   return napi_status.napi_ok;
@@ -143,7 +173,7 @@ napi_value toNapiValue (F)(
   napi_value toRet;
   auto status = toNapi!F(env, toCast, &toRet);
   if (status != napi_status.napi_ok) {
-    env.throwInJS (`Unable to create return value`);
+    env.throwInJS (`Unable to create JS value: ` ~ toCast.to!string);
   }
   return toRet;
 }
