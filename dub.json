@@ -1,0 +1,20 @@
+{
+	"authors": [
+		"Nemo"
+	],
+	"copyright": "Copyright © 2020, Nemo",
+	"description": "Native node module creator",
+	"license": "MIT",
+	"name": "node_dlang",
+	"configurations": [
+		{
+			"name": "node_dlang_windows",
+			"platforms": ["windows"],
+			"lflags": ["C:\\Users\\Nemo\\AppData\\Local\\node-gyp\\Cache\\12.18.3\\x64\\node.lib"],
+			"targetPath" : ".",
+			"targetName" : "module.node",
+			"postGenerateCommands": ["move module.node.dll module.node"],
+			"targetType": "dynamicLibrary"
+		}
+	]
+}

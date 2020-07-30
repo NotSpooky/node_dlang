@@ -2,3 +2,6 @@
 *.s
 binding.gyp
 src/example.a
+module.node
+dub.selections.json
+.dub

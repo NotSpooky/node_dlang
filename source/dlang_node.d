@@ -316,8 +316,40 @@ mixin template exportToJs (Functions ...) {
   }
 
   /+__declspec(dllexport, allocate(".CRT$XCU")) void(* _register_NAPI_MODULE_NAME_)(void) = _register_NAPI_MODULE_NAME;+/
-  /*
-  import ldc.attributes;
-  @(section(".CRT$XCU")) extern (Windows) export immutable _register_NAPI_MODULE_NAME_ = &_register_NAPI_MODULE_NAME;
-  */
+  //import ldc.attributes;
+  //@(section(".CRT$XCU")) extern (Windows) export immutable _register_NAPI_MODULE_NAME_ = &_register_NAPI_MODULE_NAME;
+
+/+
+  import core.sys.windows.windows;
+import core.sys.windows.dll;
+
+__gshared HINSTANCE g_hInst;
+
+extern (Windows)
+BOOL DllMain(HINSTANCE hInstance, ULONG ulReason, LPVOID pvReserved)
+{
+    switch (ulReason)
+    {
+	case DLL_PROCESS_ATTACH:
+	    g_hInst = hInstance;
+	    dll_process_attach( hInstance, true );
+	    break;
+
+	case DLL_PROCESS_DETACH:
+	    dll_process_detach( hInstance, true );
+	    break;
+
+	case DLL_THREAD_ATTACH:
+	    dll_thread_attach( true, true );
+	    break;
+
+	case DLL_THREAD_DETACH:
+	    dll_thread_detach( true, true );
+	    break;
+
+        default:
+    }
+    return true;
+  }
++/
 }
