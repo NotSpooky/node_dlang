@@ -1,8 +1,14 @@
 #include <node_api.h>
 
+/*
 napi_value exportToJs(napi_env env, napi_value exports);
-napi_value Init(napi_env env, napi_value exports) {
-  return exportToJs (env, exports);
-}
+NAPI_MODULE(NODE_GYP_MODULE_NAME, exportToJs)
+*/
+extern napi_module _module;
 
-NAPI_MODULE(NODE_GYP_MODULE_NAME, Init)
+/*
+static void _register_NODE_GYP_MODULE_NAME(void) __attribute__((constructor));
+static void _register_NODE_GYP_MODULE_NAME(void) {
+  napi_module_register(&_module);
+}
+*/

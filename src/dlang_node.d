@@ -300,4 +300,17 @@ mixin template exportToJs (Functions ...) {
     }
     return exports;
   }
+  extern (C) static __gshared napi_module _module = {
+    1  // nm_version
+    , 0 // nm_flags
+    , __FILE__.ptr
+    , &.exportToJs
+    , "NODE_GYP_MODULE_NAME"
+    , null
+  };
+  
+
+  extern (C) pragma(LDC_global_crt_ctor) static __gshared void _register_NODE_GYP_MODULE_NAME () {
+    napi_module_register(&_module);
+  }
 }
