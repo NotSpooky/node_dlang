@@ -309,8 +309,15 @@ mixin template exportToJs (Functions ...) {
     , null
   };
   
-
-  extern (C) pragma(crt_constructor) static __gshared void _register_NODE_GYP_MODULE_NAME () {
+  import core.sys.windows.windows;
+  import core.sys.windows.dll;
+  extern (C) pragma(crt_constructor) export __gshared void _register_NAPI_MODULE_NAME () {
     napi_module_register(&_module);
   }
+
+  /+__declspec(dllexport, allocate(".CRT$XCU")) void(* _register_NAPI_MODULE_NAME_)(void) = _register_NAPI_MODULE_NAME;+/
+  /*
+  import ldc.attributes;
+  @(section(".CRT$XCU")) extern (Windows) export immutable _register_NAPI_MODULE_NAME_ = &_register_NAPI_MODULE_NAME;
+  */
 }
