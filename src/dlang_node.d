@@ -310,7 +310,7 @@ mixin template exportToJs (Functions ...) {
   };
   
 
-  extern (C) pragma(LDC_global_crt_ctor) static __gshared void _register_NODE_GYP_MODULE_NAME () {
+  extern (C) pragma(crt_constructor) static __gshared void _register_NODE_GYP_MODULE_NAME () {
     napi_module_register(&_module);
   }
 }
