@@ -15,6 +15,12 @@
 			"targetName" : "module.node",
 			"postGenerateCommands": ["move module.node.dll module.node"],
 			"targetType": "dynamicLibrary"
-		}
+		}, {
+      "name": "node_dlang_posix",
+      "platforms": ["posix"],
+      "targetName" : "module.node",
+      "targetType" : "dynamicLibrary",
+			"postGenerateCommands": ["mv libmodule.node.so module.node"]
+    }
 	]
 }
