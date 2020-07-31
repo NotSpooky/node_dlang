@@ -11,16 +11,14 @@
 			"name": "node_dlang_windows",
 			"platforms": ["windows"],
 			"lflags": ["node.lib"],
-			"targetPath" : ".",
-			"targetName" : "module.node",
-			"postGenerateCommands": ["move module.node.dll module.node"],
-			"targetType": "dynamicLibrary"
+			"targetType": "staticLibrary"
 		}, {
       "name": "node_dlang_posix",
       "platforms": ["posix"],
-      "targetName" : "module.node",
-      "targetType" : "dynamicLibrary",
-			"postGenerateCommands": ["mv libmodule.node.so module.node"]
+      "targetType" : "staticLibrary"
     }
-	]
+	],
+  "subPackages" : [
+    "./example/"
+  ]
 }

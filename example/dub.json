@@ -1,0 +1,28 @@
+{
+	"authors": [
+		"Christian Durán C"
+	],
+	"copyright": "Copyright © 2020, Nemo",
+	"description": "A minimal D application.",
+	"license": "MIT",
+	"name": "example",
+  "dependencies": {
+      "node_dlang": {"path": "../"}
+  },
+	"configurations": [
+		{
+			"name": "example_windows",
+			"platforms": ["windows"],
+      "targetType": "dynamicLibrary",
+			"targetPath" : ".",
+      "postGenerateCommands": ["move module.node.dll module.node"]
+    }, 
+    {
+      "name": "example_posix",
+      "platforms": ["posix"],
+      "targetName" : "module.node",
+      "targetType": "dynamicLibrary",
+      "postGenerateCommands": ["mv libmodule.node.so module.node"]
+    }
+  ]
+}
