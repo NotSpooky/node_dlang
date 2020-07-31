@@ -15,6 +15,7 @@
 			"platforms": ["windows"],
       "targetType": "dynamicLibrary",
 			"targetPath" : ".",
+      "targetName" : "module.node",
       "postGenerateCommands": ["move module.node.dll module.node"]
     }, 
     {
