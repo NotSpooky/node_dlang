@@ -5,3 +5,4 @@ src/example.a
 module.node
 dub.selections.json
 .dub
+libnode_dlang.a
