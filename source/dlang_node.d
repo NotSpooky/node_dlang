@@ -1,5 +1,7 @@
 module dlang_node;
-pragma(LDC_no_moduleinfo);
+version (LDC) {
+  pragma(LDC_no_moduleinfo);
+}
 import node_api;
 import js_native_api;
 
