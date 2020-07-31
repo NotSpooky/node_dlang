@@ -76,6 +76,10 @@ Example file:
 ```javascript
 // Use relative paths if you haven't made an NPM package yet
 const mymodule = require ('./module.node');
+// This specific example doesn't need this because D's runtime isn't used
+// But usually you will want to add this before calling other of your
+// module's functions
+mymodule.initialize ();
 console.log(mymodule.foo(1, 3));
 ```
 Run with
