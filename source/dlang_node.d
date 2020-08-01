@@ -100,6 +100,7 @@ struct JSobj (Funs...) {
   napi_env env;
   napi_value context;
   napi_value [FunPositions.length] funs;
+  napi_ref ctxRef = null;
 
   enum typeMsg = `JSObj template args should be pairs of strings with types`;
   static assert (Funs.length % 2 == 0, typeMsg);
@@ -115,8 +116,7 @@ struct JSobj (Funs...) {
     this.env = env;
     auto status = napi_create_object (env, &context);
     assert (status == napi_status.napi_ok);
-    // Don't know why can't I create a reference UwU
-    // this.ctxRef = reference (env, context);
+    ctxRef = reference (env, context);
     fillFuns ();
   }
   // Assigning from a JS object.
@@ -124,8 +124,34 @@ struct JSobj (Funs...) {
     this.env = env;
     this.context = context;
     // Keep alive. Note this will NEVER be GC'ed
-    auto ctxRef = reference (env, context);
+    ctxRef = reference (env, context);
     fillFuns ();
+  }
+  
+  this(ref return scope JSobj!Funs rhs) {
+    // writeln (`Copying ` ~ Funs.stringof);
+    this.env = rhs.env;
+    this.context = rhs.context;
+    this.funs = rhs.funs;
+    this.ctxRef = rhs.ctxRef;
+    if (ctxRef != null) {
+      auto status = napi_reference_ref (env, ctxRef, null);
+      //writeln (`> Ref count is `, currentRefCount);
+      assert (status == napi_status.napi_ok);
+    }
+  }
+  ~this () {
+    /+import std.stdio;
+    writeln ("Destructing JSobj " ~ Funs.stringof);+/
+    uint currentRefCount;
+    if (ctxRef != null) {
+      auto status = napi_reference_unref (env, ctxRef, null);
+      assert (
+        status == napi_status.napi_ok
+        , `Got status when doing unref ` ~ status.to!string
+      );
+      //writeln (`< Ref count is `, currentRefCount);
+    }
   }
   static foreach (i, FunPosition; FunPositions) {
       // Add function that simply uses callNapi.
