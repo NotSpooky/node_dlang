@@ -50,24 +50,20 @@ Add at the beginning of your D file:
 ```d
 module your_module_name;
 import dlang_node;
-pragma(LDC_no_moduleinfo);
-extern (C):
-// Needed to be able to use D's runtime features such as garbage collector
-// Omission can lead to crashes.
-void initialize () {
-	import core.runtime;
-	rt_init();
+version (LDC) {
+  pragma (LDC_no_moduleinfo);
 }
+extern (C): // We need no mangling
 ```
 Then add your functions as normal D code (note, as they are using extern (C) they won't have mangling):
 ```d
-auto foo(int first, long second) {
+auto foo (int first, long second) {
 	return [first, second * 4, 0];
 }
 ```
 At the end of your file use a mixin to do all the magic:
 ```d
-mixin exportToJs!(initialize, foo);
+mixin exportToJs! (foo); // Can add multiple functions as args
 ```
 Add to exportToJs template args all the functions that you want to be able to use from JavaScript.
 ## Javascript side
@@ -76,10 +72,6 @@ Example file:
 ```javascript
 // Use relative paths if you haven't made an NPM package yet
 const mymodule = require ('./module.node');
-// This specific example doesn't need this because D's runtime isn't used
-// But usually you will want to add this before calling other of your
-// module's functions
-mymodule.initialize ();
 console.log(mymodule.foo(1, 3));
 ```
 Run with
