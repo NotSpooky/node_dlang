@@ -2,6 +2,7 @@ module dlang_node;
 version (LDC) {
   pragma(LDC_no_moduleinfo);
 }
+public import js_native_api_types : napi_env;
 import node_api;
 import js_native_api;
 
@@ -9,23 +10,6 @@ import std.conv : to;
 import std.string : toStringz;
 import std.traits;
 debug import std.stdio;
-
-napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
-  napi_status status = napi_status.napi_generic_failure;
-  assert (toRet != null);
-  status = napi_create_array_with_length (env, array.length, toRet);
-  if (status != napi_status.napi_ok) {
-    return status;
-  }
-  foreach (i, val; array) {
-    // Create a napi_value for 'hello'
-    auto nv = val.toNapiValue(env);
-
-    status = napi_set_element(env, *toRet, i.to!uint, nv);
-    if (status != napi_status.napi_ok) return status;
-  }
-  return status;
-}
 
 napi_status stringToNapi (napi_env env, string toCast, napi_value * toRet) {
   return napi_create_string_utf8 (env, toCast.ptr, toCast.length, toRet);
@@ -94,42 +78,74 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
 // Example:
 // JSobj!(`multByTwo`, int function (int input), `printNum`, void function (int i))
 // Creates a struct with methods multByTwo and printNum of the respective types.
-struct JSobj (Funs...){
+struct JSobj (Funs...) {
+
+  private static auto positions () {
+    size_t [] funPositions;
+    size_t [] fieldPositions;
+    static foreach (i; 0 .. Funs.length / 2) {
+      static if (isFunctionPointer!(Funs [1 + i * 2])) {
+        funPositions ~= i * 2;
+      } else {
+        fieldPositions ~= i * 2;
+      }
+    }
+    import std.typecons : tuple;
+    return tuple!(`funPositions`, `fieldPositions`) (funPositions, fieldPositions);
+  }
+  private enum Positions = positions ();
+  private enum FunPositions = Positions.funPositions;
+  private enum FieldPositions = Positions.fieldPositions;
+
   napi_env env;
   napi_value context;
-  napi_value [Funs.length] funs;
+  napi_value [FunPositions.length] funs;
+
+  enum typeMsg = `JSObj template args should be pairs of strings with types`;
+  static assert (Funs.length % 2 == 0, typeMsg);
+
+  private void fillFuns () {
+    static foreach (i, FunPosition; FunPositions) {
+      static assert (is (typeof (Funs [FunPosition]) == string), typeMsg);
+      funs [i] = context.p (env, Funs [FunPosition]);
+    }
+  }
+
+  this (napi_env env) {
+    this.env = env;
+    auto status = napi_create_object (env, &context);
+    assert (status == napi_status.napi_ok);
+    // Don't know why can't I create a reference UwU
+    // this.ctxRef = reference (env, context);
+    fillFuns ();
+  }
+  // Assigning from a JS object.
   this (napi_env env, napi_value context) {
     this.env = env;
     this.context = context;
+    // Keep alive. Note this will NEVER be GC'ed
     auto ctxRef = reference (env, context);
-    // Fill funs.
-    static foreach (i; 0..Funs.length/2) {
-      static assert (is (typeof (Funs [i * 2]) == string), typeMsg);
-      funs [i] = context.p (env, Funs [i * 2]);
-    }
+    fillFuns ();
   }
-  enum typeMsg = `JSObj template args should be pairs of strings with function types`;
-  static assert (Funs.length % 2 == 0, typeMsg);
-  static foreach (i; 0..Funs.length/2) {
-    static if (isFunctionPointer!(Funs [1 + i * 2])) {
+  static foreach (i, FunPosition; FunPositions) {
       // Add function that simply uses callNapi.
       mixin (q{
-        napi_value } ~ Funs [i * 2] ~ q{(Parameters!(Funs [1 + i * 2]) args) {
-          return callNapi (env, context, funs [i], args);
+        napi_value } ~ Funs [FunPosition] ~ q{
+          (Parameters!(Funs [FunPosition + 1]) args) {
+            return callNapi (env, context, funs [i], args);
+          }
         }
-      });
-    } else {
-      // Add field
-
-      // Setter.
-      mixin (q{
-        void } ~ Funs [i * 2] ~ q{(Funs [1 + i * 2] toSet) {
-          auto asNapi = toSet.toNapiValue (env);
-          auto propName = Funs [i * 2].toStringz;
-          napi_set_named_property (env, this.context, propName, asNapi);
-        }
-      });
-    }
+      );
+  }
+  static foreach (i, FieldPosition; FieldPositions) {
+    // Setter.
+    mixin (q{
+      void } ~ Funs [FieldPosition] ~ q{ (Funs [FieldPosition + 1] toSet) {
+        auto asNapi = toSet.toNapiValue (env);
+        auto propName = Funs [FieldPosition].toStringz;
+        napi_set_named_property (env, this.context, propName, asNapi);
+      }
+    });
   }
 }
 
@@ -171,6 +187,30 @@ void throwInJS (napi_env env, string message) {
   napi_throw_error (env, null, message.toStringz);
 }
 
+napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
+  napi_status status = napi_status.napi_generic_failure;
+  assert (toRet != null);
+  status = napi_create_array_with_length (env, array.length, toRet);
+  if (status != napi_status.napi_ok) {
+    return status;
+  }
+  foreach (i, val; array) {
+    // Create a napi_value for 'hello'
+    auto nv = val.toNapiValue(env);
+
+    status = napi_set_element(env, *toRet, i.to!uint, nv);
+    if (status != napi_status.napi_ok) return status;
+  }
+  return status;
+}
+
+napi_status jsObjToNapi (T ...)(napi_env env, JSobj!T toConvert, napi_value * toRet) {
+  assert (toRet != null);
+  assert (env == toConvert.env);
+  *toRet =  toConvert.context;
+  return napi_status.napi_ok;
+}
+
 template toNapi (T) {
   static if (is (T == double)) {
     alias toNapi = napi_create_double;
@@ -182,6 +222,8 @@ template toNapi (T) {
     alias toNapi = stringToNapi;
   } else static if (is (T == A[], A)) {
     alias toNapi = arrayToNapi;
+  } else static if (__traits(isSame, TemplateOf!T, JSobj)) {
+    alias toNapi = jsObjToNapi;
   } else {
     static assert (0, `Not implemented: Conversion to JS type for ` ~ T.stringof);
   }
@@ -208,10 +250,20 @@ napi_value toNapiValue (napi_env env) {
 
 auto fromJs (alias Function) (napi_env env, napi_callback_info info) {
   alias FunParams = Parameters!Function;
-  immutable argCount = FunParams.length;
+  static if (FunParams.length > 0 && is (FunParams [0] == napi_env)) {
+    immutable argCount = FunParams.length - 1;
+    // First parameter is the env, which is from the 'env' param in fromJs.
+    // Thus it isn't stored as an napi_value.
+    enum envParam = `env, `;
+    enum firstValParam = 1;
+  } else {
+    immutable argCount = FunParams.length;
+    enum envParam = ``;
+    enum firstValParam = 0;
+  }
   napi_value [argCount] argVals;
   size_t argCountMut = argCount;
-  auto status = napi_get_cb_info(env, info, &argCountMut, argVals.ptr, null, null);
+  auto status = napi_get_cb_info (env, info, &argCountMut, argVals.ptr, null, null);
   if (status != napi_status.napi_ok) {
     napi_throw_type_error (
       env
@@ -219,14 +271,14 @@ auto fromJs (alias Function) (napi_env env, napi_callback_info info) {
       , (`Failed to parse arguments for function ` ~ Function.mangleof ~ `, incorrect amount?`).toStringz
     );
   }
-  static foreach (i, Param; FunParams) {
+  static foreach (i, Param; FunParams [firstValParam .. $]) {
     // Create a temporary value with the casted data.
     mixin (`auto param` ~ i.to!string ~ ` = fromNapi!Param (env, argVals [i]);`);
   }
   // Now call Function with each of these casted values.
   import std.range;
   import std.algorithm;
-  enum paramCalls = iota (argCount)
+  enum paramCalls = envParam ~ iota (argCount)
     .map!`"param" ~ a.to!string`
     .joiner (`,`)
     .to!string;
@@ -302,6 +354,9 @@ mixin template exportToJs (Functions ...) {
     }
     return exports;
   }
+
+  // From the C macros that register the module.
+
   extern (C) static __gshared napi_module _module = {
     1  // nm_version
     , 0 // nm_flags
@@ -316,42 +371,4 @@ mixin template exportToJs (Functions ...) {
   extern (C) pragma(crt_constructor) export __gshared void _register_NAPI_MODULE_NAME () {
     napi_module_register(&_module);
   }
-
-  /+__declspec(dllexport, allocate(".CRT$XCU")) void(* _register_NAPI_MODULE_NAME_)(void) = _register_NAPI_MODULE_NAME;+/
-  //import ldc.attributes;
-  //@(section(".CRT$XCU")) extern (Windows) export immutable _register_NAPI_MODULE_NAME_ = &_register_NAPI_MODULE_NAME;
-
-/+
-  import core.sys.windows.windows;
-import core.sys.windows.dll;
-
-__gshared HINSTANCE g_hInst;
-
-extern (Windows)
-BOOL DllMain(HINSTANCE hInstance, ULONG ulReason, LPVOID pvReserved)
-{
-    switch (ulReason)
-    {
-	case DLL_PROCESS_ATTACH:
-	    g_hInst = hInstance;
-	    dll_process_attach( hInstance, true );
-	    break;
-
-	case DLL_PROCESS_DETACH:
-	    dll_process_detach( hInstance, true );
-	    break;
-
-	case DLL_THREAD_ATTACH:
-	    dll_thread_attach( true, true );
-	    break;
-
-	case DLL_THREAD_DETACH:
-	    dll_thread_detach( true, true );
-	    break;
-
-        default:
-    }
-    return true;
-  }
-+/
 }
