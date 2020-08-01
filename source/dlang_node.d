@@ -7,7 +7,7 @@ import node_api;
 import js_native_api;
 
 import std.conv : to;
-import std.string : toStringz;
+import std.string : toStringz, fromStringz;
 import std.traits;
 debug import std.stdio;
 
@@ -165,11 +165,23 @@ struct JSobj (Funs...) {
   }
   static foreach (i, FieldPosition; FieldPositions) {
     // Setter.
+    enum FieldName = Funs [FieldPosition];
     mixin (q{
-      void } ~ Funs [FieldPosition] ~ q{ (Funs [FieldPosition + 1] toSet) {
+      void } ~ FieldName ~ q{ (Funs [FieldPosition + 1] toSet) {
         auto asNapi = toSet.toNapiValue (env);
-        auto propName = Funs [FieldPosition].toStringz;
+        auto propName = FieldName.toStringz;
         napi_set_named_property (env, this.context, propName, asNapi);
+      }
+    });
+    // Getter.
+    mixin (q{
+      auto } ~ FieldName ~ q{ () {
+        return fromNapi!(Funs [FieldPosition + 1]) (
+          env,
+          this
+            .context
+            .p (env, FieldName)
+        );
       }
     });
   }
@@ -185,14 +197,67 @@ auto getJSobj (T)(napi_env env, napi_value ctx, T * toRet) {
   return napi_status.napi_ok;
 }
 
+auto getStr (napi_env env, napi_value napiVal, string * toRet) {
+  // Try with statically allocated buffer for small strings
+  char [2048] inBuffer;
+  assert (toRet != null);
+  size_t readChars = 0;
+  auto status = napi_get_value_string_utf8 (
+    env
+    , napiVal
+    , inBuffer.ptr
+    , inBuffer.length
+    , & readChars
+  );
+  if (status != napi_status.napi_ok) {
+    // TODO: Throw JS exception instead.
+    throw new Exception (`Expected string arg`);
+  }
+  
+  if (readChars == inBuffer.length - 1) {
+    // String bigger than buffer :( need a dynamic array.
+    // Technically this is not needed for the specific case of
+    // exactly size inBuffer.length - 1
+    // Get string size to allocate an array.
+    status = napi_get_value_string_utf8 (
+      env
+      , napiVal
+      , null
+      , 0
+      , & readChars
+    );
+    assert (status == napi_status.napi_ok);
+    // Try again with bigger size.
+    auto buffer = new char [readChars + 1]; // include null terminator
+    status = napi_get_value_string_utf8 (
+      env
+      , napiVal
+      , buffer.ptr
+      , buffer.length
+      , & readChars
+    );
+    assert (status == napi_status.napi_ok);
+    *toRet = buffer.ptr.fromStringz.to!string;
+  } else {
+    *toRet = inBuffer.ptr.fromStringz.to!string;
+  }
+  return napi_status.napi_ok;
+}
+
 T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
   T toRet;
   static if (is (T == double)) {
     alias cv = napi_get_value_double;
   } else static if (is (T == int)) {
     alias cv = napi_get_value_int32;
+  } else static if (is (T == uint)) {
+    alias cv = napi_get_value_uint32;
   } else static if (is (T == long)) {
     alias cv = napi_get_value_int64;
+  } else static if (is (T == ulong)) {
+    alias cv = napi_get_value_uint64;
+  } else static if (is (T == string)) {
+    alias cv = getStr;
   } else static if (is (T == napi_value)) {
     alias cv = napiIdentity;
   } else static if (is (T == void delegate ())) {
@@ -242,8 +307,12 @@ template toNapi (T) {
     alias toNapi = napi_create_double;
   } else static if (is (T == int)) {
     alias toNapi = napi_create_int32;
+  } else static if (is (T == uint)) {
+    alias toNapi = napi_create_uint32;
   } else static if (is (T == long)) {
     alias toNapi = napi_create_int64;
+  } else static if (is (T == ulong)) {
+    alias toNapi = napi_create_uint64;
   } else static if (is (T == string)) {
     alias toNapi = stringToNapi;
   } else static if (is (T == A[], A)) {
