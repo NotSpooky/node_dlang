@@ -99,41 +99,30 @@ struct JSobj (Funs...) {
   private enum FieldPositions = Positions.fieldPositions;
 
   napi_env env;
-  napi_value context;
-  napi_value [FunPositions.length] funs;
   napi_ref ctxRef = null;
 
   enum typeMsg = `JSObj template args should be pairs of strings with types`;
   static assert (Funs.length % 2 == 0, typeMsg);
 
-  private void fillFuns () {
-    static foreach (i, FunPosition; FunPositions) {
-      static assert (is (typeof (Funs [FunPosition]) == string), typeMsg);
-      funs [i] = context.p (env, Funs [FunPosition]);
-    }
-  }
-
+  // Creating a new object
   this (napi_env env) {
     this.env = env;
-    auto status = napi_create_object (env, &context);
+    auto context = new napi_value ();
+    auto status = napi_create_object (env, context);
     assert (status == napi_status.napi_ok);
-    ctxRef = reference (env, context);
-    fillFuns ();
+    ctxRef = reference (env, *context);
   }
+
   // Assigning from a JS object.
   this (napi_env env, napi_value context) {
     this.env = env;
-    this.context = context;
     // Keep alive. Note this will NEVER be GC'ed
     ctxRef = reference (env, context);
-    fillFuns ();
   }
   
-  this(ref return scope JSobj!Funs rhs) {
+  this (ref return scope JSobj!Funs rhs) {
     // writeln (`Copying ` ~ Funs.stringof);
     this.env = rhs.env;
-    this.context = rhs.context;
-    this.funs = rhs.funs;
     this.ctxRef = rhs.ctxRef;
     if (ctxRef != null) {
       auto status = napi_reference_ref (env, ctxRef, null);
@@ -142,9 +131,8 @@ struct JSobj (Funs...) {
     }
   }
   ~this () {
-    /+import std.stdio;
-    writeln ("Destructing JSobj " ~ Funs.stringof);+/
-    uint currentRefCount;
+    // writeln ("Destructing JSobj " ~ Funs.stringof);
+    // uint currentRefCount;
     if (ctxRef != null) {
       auto status = napi_reference_unref (env, ctxRef, null);
       assert (
@@ -154,12 +142,19 @@ struct JSobj (Funs...) {
       //writeln (`< Ref count is `, currentRefCount);
     }
   }
+  
+  auto context () {
+    return val (env, this.ctxRef);
+  }
+
   static foreach (i, FunPosition; FunPositions) {
       // Add function that simply uses callNapi.
       mixin (q{
         napi_value } ~ Funs [FunPosition] ~ q{
           (Parameters!(Funs [FunPosition + 1]) args) {
-            return callNapi (env, context, funs [i], args);
+            auto context = val (env, this.ctxRef);
+            auto toCall = context.p (env, Funs [FunPosition]);
+            return callNapi (env, context, toCall, args);
           }
         }
       );
@@ -170,7 +165,8 @@ struct JSobj (Funs...) {
       void } ~ Funs [FieldPosition] ~ q{ (Funs [FieldPosition + 1] toSet) {
         auto asNapi = toSet.toNapiValue (env);
         auto propName = Funs [FieldPosition].toStringz;
-        napi_set_named_property (env, this.context, propName, asNapi);
+        auto context = val (env, this.ctxRef);
+        napi_set_named_property (env, context, propName, asNapi);
       }
     });
     // Getter.
@@ -178,9 +174,7 @@ struct JSobj (Funs...) {
       auto } ~ Funs [FieldPosition] ~ q{ () {
         return fromNapi!(Funs [FieldPosition + 1]) (
           env,
-          this
-            .context
-            .p (env, Funs [FieldPosition])
+          val (env, this.ctxRef).p (env, Funs [FieldPosition])
         );
       }
     });
@@ -210,8 +204,7 @@ auto getStr (napi_env env, napi_value napiVal, string * toRet) {
     , & readChars
   );
   if (status != napi_status.napi_ok) {
-    // TODO: Throw JS exception instead.
-    throw new Exception (`Expected string arg`);
+    return status;
   }
   
   if (readChars == inBuffer.length - 1) {
@@ -294,12 +287,12 @@ napi_status getNullable (BaseType) (
   BaseType toRetNonNull;
   auto status = fromNapiB!BaseType (env, value, &toRetNonNull);
   if (status != napi_status.napi_ok) {
-    debug {
+    /+debug {
       import std.stdio;
       writeln (
         `Got status `, status, ` when trying to convert to `, Nullable!BaseType.stringof
       );
-    }
+    }+/
     *toRet = Nullable!BaseType ();
   } else {
     *toRet = Nullable!BaseType (toRetNonNull);
