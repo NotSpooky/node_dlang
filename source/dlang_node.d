@@ -7,7 +7,7 @@ import node_api;
 import js_native_api;
 
 import std.conv : to;
-import std.string : toStringz, fromStringz;
+import std.string : toStringz;
 import std.traits;
 debug import std.stdio;
 
@@ -21,6 +21,7 @@ auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
 }
 
 alias ExternD(T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
+alias ExternC(T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
 
 // Note: func must be alive.
 auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRet) {
@@ -237,9 +238,9 @@ auto getStr (napi_env env, napi_value napiVal, string * toRet) {
       , & readChars
     );
     assert (status == napi_status.napi_ok);
-    *toRet = buffer.ptr.fromStringz.to!string;
+    *toRet = buffer.ptr [0..readChars].to!string;
   } else {
-    *toRet = inBuffer.ptr.fromStringz.to!string;
+    *toRet = inBuffer.ptr [0..readChars].to!string;
   }
   return napi_status.napi_ok;
 }
@@ -380,6 +381,25 @@ auto fromJs (alias Function) (napi_env env, napi_callback_info info) {
   mixin (`return Function (` ~ paramCalls ~ `);`);
 }
 
+extern (C) alias void func (napi_env);
+template MainFunction (alias Function) {
+  alias ToCall = Function;
+  //pragma (msg, ExternD!(typeof (Function)).stringof);
+  static assert (
+    is (ExternC! (typeof (Function)) == func)
+    , `MainFunction must be instantiated with a void function (napi_env)`
+  );
+}
+
+bool isMainFunction (alias Function) () if (isCallable!Function) {
+  return false;
+}
+import std.meta;
+bool isMainFunction (alias Function) () if (!isCallable!Function) {
+  assert (__traits (isSame, TemplateOf!(Function), MainFunction));
+  return true;
+}
+
 mixin template exportToJs (Functions ...) {
   import node_api;
   import js_native_api;
@@ -393,27 +413,29 @@ mixin template exportToJs (Functions ...) {
     enum WrappedFunctionName = `dlangnapi_` ~ Function.mangleof;
   }
   static foreach (Function; Functions) {
-    // If the function doesn't manually return a napi_value, create a function
-    // that casts to napi_value.
-    static if (! Returns! (Function, napi_value)) {
-      // Create a function that casts the D type to JS one.
-      // That will be the function actually added to exports.
+    static if (! (isMainFunction!Function ())) {
+      // If the function doesn't manually return a napi_value, create a function
+      // that casts to napi_value.
+      static if (! Returns! (Function, napi_value)) {
+        // Create a function that casts the D type to JS one.
+        // That will be the function actually added to exports.
 
-      mixin (`extern (C) napi_value ` ~ WrappedFunctionName!Function
-          ~ `(napi_env env, napi_callback_info info) {`
-        ~ (Returns! (Function, void) // Check whether function returns or not.
-            // This version returns a napi_value with undefined.
-            ? q{
-                fromJs!Function (env, info);
-                return toNapiValue (env); // Return undefined to JS.
-              }
-            // This version casts the returned D value to an napi_value
-            : q{
-                return fromJs!Function (env, info).toNapiValue (env);
-              }
-          )
-        ~ `}`
-      );
+        mixin (`extern (C) napi_value ` ~ WrappedFunctionName!Function
+            ~ `(napi_env env, napi_callback_info info) {`
+          ~ (Returns! (Function, void) // Check whether function returns or not.
+              // This version returns a napi_value with undefined.
+              ? q{
+                  fromJs!Function (env, info);
+                  return toNapiValue (env); // Return undefined to JS.
+                }
+              // This version casts the returned D value to an napi_value
+              : q{
+                  return fromJs!Function (env, info).toNapiValue (env);
+                }
+            )
+          ~ `}`
+        );
+      }
     }
   }
   extern (C) napi_value exportToJs (napi_env env, napi_value exports) {
@@ -443,9 +465,14 @@ mixin template exportToJs (Functions ...) {
       return status;
     }
     static foreach (Function; Functions) {
-      if (addFunction!Function () != napi_status.napi_ok) {
-        return exports;
-      } 
+      static if (isMainFunction!Function ()) {
+        // Just call it.
+        Function.ToCall (env);
+      } else {
+        if (addFunction!Function () != napi_status.napi_ok) {
+          return exports;
+        } 
+      }
     }
     return exports;
   }
