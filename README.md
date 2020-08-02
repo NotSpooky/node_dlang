@@ -3,8 +3,6 @@
 Package to create native NodeJS modules based on [N-API](https://nodejs.org/api/n-api.html "N-API")
 Tested on Linux and Windows with LDC compiler.
 
-[TOCM]
-
 # Requirements
 Just a D compiler (only tested on LDC) with the DUB package manager that is usually included with the compiler.
 JavaScript is not necessary to generate the modules but NodeJS is needed to test the generated file.

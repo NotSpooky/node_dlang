@@ -20,8 +20,8 @@ auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
   return napi_status.napi_ok;
 }
 
-alias ExternD(T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
-alias ExternC(T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
+alias ExternD (T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
+alias ExternC (T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
 
 // Note: func must be alive.
 auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRet) {
@@ -166,22 +166,21 @@ struct JSobj (Funs...) {
   }
   static foreach (i, FieldPosition; FieldPositions) {
     // Setter.
-    enum FieldName = Funs [FieldPosition];
     mixin (q{
-      void } ~ FieldName ~ q{ (Funs [FieldPosition + 1] toSet) {
+      void } ~ Funs [FieldPosition] ~ q{ (Funs [FieldPosition + 1] toSet) {
         auto asNapi = toSet.toNapiValue (env);
-        auto propName = FieldName.toStringz;
+        auto propName = Funs [FieldPosition].toStringz;
         napi_set_named_property (env, this.context, propName, asNapi);
       }
     });
     // Getter.
     mixin (q{
-      auto } ~ FieldName ~ q{ () {
+      auto } ~ Funs [FieldPosition] ~ q{ () {
         return fromNapi!(Funs [FieldPosition + 1]) (
           env,
           this
             .context
-            .p (env, FieldName)
+            .p (env, Funs [FieldPosition])
         );
       }
     });
@@ -245,32 +244,82 @@ auto getStr (napi_env env, napi_value napiVal, string * toRet) {
   return napi_status.napi_ok;
 }
 
-T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
-  T toRet;
+auto getFloat (napi_env env, napi_value napiVal, float * toRet) {
+  double intermediate;
+  auto status = napi_get_value_double (env, napiVal, &intermediate);
+  *toRet = intermediate.to!float;
+  return status;
+}
+
+template fromNapiB (T) {
   static if (is (T == double)) {
-    alias cv = napi_get_value_double;
+    alias fromNapiB = napi_get_value_double;
   } else static if (is (T == int)) {
-    alias cv = napi_get_value_int32;
+    alias fromNapiB = napi_get_value_int32;
   } else static if (is (T == uint)) {
-    alias cv = napi_get_value_uint32;
+    alias fromNapiB = napi_get_value_uint32;
   } else static if (is (T == long)) {
-    alias cv = napi_get_value_int64;
+    alias fromNapiB = napi_get_value_int64;
   } else static if (is (T == ulong)) {
-    alias cv = napi_get_value_uint64;
+    alias fromNapiB = napi_get_value_uint64;
+  } else static if (is (T == double)) {
+    alias fromNapiB = napi_get_value_double;
+  } else static if (is (T == float)) {
+    alias fromNapiB = getFloat;
   } else static if (is (T == string)) {
-    alias cv = getStr;
+    alias fromNapiB = getStr;
+  } else static if (is (T == Nullable!A, A)) {
+    alias fromNapiB = getNullable!A;
   } else static if (is (T == napi_value)) {
-    alias cv = napiIdentity;
+    alias fromNapiB = napiIdentity;
   } else static if (is (T == void delegate ())) {
-    alias cv = jsFunction;
+    alias fromNapiB = jsFunction;
   } else static if (__traits(isSame, TemplateOf!(T), JSobj)) {
-    alias cv = getJSobj;
+    alias fromNapiB = getJSobj;
   } else {
     static assert (0, `Not implemented: Convertion from JS type for ` ~ T.stringof);
   }
-  auto status = cv (env, value, &toRet);
+}
+
+napi_status getNullable (BaseType) (
+  napi_env env
+  , napi_value value
+  , Nullable!BaseType * toRet
+) {
+  /+
+  auto erroredToJS = () => napi_throw_error (
+    env, null, `Failed to parse to ` ~ Nullable!BaseType.stringof
+  );
+  +/
+  BaseType toRetNonNull;
+  auto status = fromNapiB!BaseType (env, value, &toRetNonNull);
   if (status != napi_status.napi_ok) {
-    napi_throw_error (env, null, `Failed to parse ` ~ argName ~ ` to ` ~ T.stringof);
+    debug {
+      import std.stdio;
+      writeln (
+        `Got status `, status, ` when trying to convert to `, Nullable!BaseType.stringof
+      );
+    }
+    *toRet = Nullable!BaseType ();
+  } else {
+    *toRet = Nullable!BaseType (toRetNonNull);
+  }
+  return napi_status.napi_ok;
+}
+
+import std.typecons : Nullable;
+T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
+  T toRet;
+  auto erroredToJS = () => napi_throw_error (
+    env, null, `Failed to parse ` ~ argName ~ ` to ` ~ T.stringof
+  );
+  try {
+    auto status = fromNapiB!T (env, value, &toRet);
+    if (status != napi_status.napi_ok) {
+      erroredToJS ();
+    }
+  } catch (Exception ex) {
+    erroredToJS ();
   }
   return toRet;
 }
@@ -303,6 +352,14 @@ napi_status jsObjToNapi (T ...)(napi_env env, JSobj!T toConvert, napi_value * to
   return napi_status.napi_ok;
 }
 
+auto nullableToNapi (T) (napi_env env, Nullable!T toConvert, napi_value * toRet) {
+  if (toConvert.isNull ()) {
+    return napi_get_null (env, toRet);
+  } else {
+    return toNapi!T (env, toConvert.get (), toRet);
+  }
+}
+
 template toNapi (T) {
   static if (is (T == double)) {
     alias toNapi = napi_create_double;
@@ -314,8 +371,12 @@ template toNapi (T) {
     alias toNapi = napi_create_int64;
   } else static if (is (T == ulong)) {
     alias toNapi = napi_create_uint64;
+  } else static if (is (T : double)) {
+    alias toNapi = napi_create_double;
   } else static if (is (T == string)) {
     alias toNapi = stringToNapi;
+  } else static if (is (T == Nullable!A, A)) {
+    alias toNapi = nullableToNapi!A;
   } else static if (is (T == A[], A)) {
     alias toNapi = arrayToNapi;
   } else static if (__traits(isSame, TemplateOf!T, JSobj)) {
@@ -336,7 +397,7 @@ napi_value toNapiValue (F)(
   return toRet;
 }
 
-napi_value toNapiValue (napi_env env) {
+napi_value undefined (napi_env env) {
   napi_value toRet;
   if (napi_get_undefined (env, &toRet) != napi_status.napi_ok) {
     env.throwInJS (`Unable to return void (undefined in JS)`);
@@ -426,7 +487,7 @@ mixin template exportToJs (Functions ...) {
               // This version returns a napi_value with undefined.
               ? q{
                   fromJs!Function (env, info);
-                  return toNapiValue (env); // Return undefined to JS.
+                  return undefined (env);
                 }
               // This version casts the returned D value to an napi_value
               : q{
