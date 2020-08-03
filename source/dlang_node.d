@@ -52,8 +52,10 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
       , napiArgs.ptr
       , &returned
     );
-    writeln (`Got status `, status);
-    if (status != napi_status.napi_ok) return status;
+    if (status != napi_status.napi_ok) {
+      debug stderr.writeln (`Got status `, status);
+      throw new Exception (`JS call errored :(`);
+    }
     
     alias RetType = ReturnType!R;
     static if (!is (RetType == void)) {
@@ -210,14 +212,20 @@ alias Console = JSobj!(
   `log`, void function (napi_value toLog)
 );
 
-auto global (napi_env env, string name) {
+auto global (napi_env env) {
   napi_value val;
   auto status = napi_get_global (env, &val);
   assert (status == napi_status.napi_ok);
-  return val.p (env, name);
+  return val;
+}
+auto global (napi_env env, string name) {
+  return global (env).p (env, name);
 }
 
 auto console = (napi_env env) => fromNapi!Console (env, global (env, `console`));
+auto requireJs (RetType = napi_value) (napi_env env, string id) {
+  return fromNapi!(RetType delegate (string)) (env, global (env, `require`)) (id);
+}
 
 auto getJSobj (T)(napi_env env, napi_value ctx, T * toRet) {
   assert (toRet != null);
