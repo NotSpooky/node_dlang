@@ -1,12 +1,10 @@
 import dlang_node;
-pragma(LDC_no_moduleinfo);
+
+version (LDC) {
+  pragma (LDC_no_moduleinfo);
+}
 
 extern (C):
-auto initialize () {
-  import core.runtime;
-  rt_init();
-  return 0;
-}
 
 auto kumiko(int first, long second) {
   return [first, second * 4, 0];
@@ -15,7 +13,7 @@ auto fumiko () {
   return 6;
 }
 
-auto callbackExample (ExternD!(void delegate ()) callback) {
+auto callbackExample (void delegate () callback) {
   callback ();
   callback ();
   callback ();
@@ -78,8 +76,21 @@ auto canvasExample (CanvasRenderingContext2D ctx) {
   return 444;
 }
 
-auto logExample (Console console) {
-  console.log (`Honk honk`);
+auto writeTabbed (T...) (T args) {
+  import std.stdio;
+  writeln ('\t', args);
 }
 
-mixin exportToJs!(initialize, kumiko, fumiko, callbackExample, canvasExample, logExample);
+// Note: There's a convenience console (napi_env) on dlang_node
+// This is just an example receiving a Console object.
+auto logExample (napi_env env, Console console) {
+  "Log example".writeTabbed;
+  auto toLog = "\tHonk honk".toNapiValue (env);
+  console.log (toLog);
+}
+
+void mainExample (napi_env env) {
+  `Module started!`.writeTabbed;
+}
+
+mixin exportToJs!(MainFunction!mainExample, kumiko, fumiko, callbackExample, canvasExample, logExample);

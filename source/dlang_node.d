@@ -223,8 +223,19 @@ auto global (napi_env env, string name) {
 }
 
 auto console = (napi_env env) => fromNapi!Console (env, global (env, `console`));
+
+/// Note: Only available if the module's globals have 'require' which is not usually
+/// the case
 auto requireJs (RetType = napi_value) (napi_env env, string id) {
-  return fromNapi!(RetType delegate (string)) (env, global (env, `require`)) (id);
+  try {
+    return fromNapi!(RetType delegate (string)) (env, global (env, `require`)) (id);
+  } catch (Exception ex) {
+    debug stderr.writeln (
+      `Errored on require, probably the globals object doesn't contain require.`
+      , "\nConsider sending the loaded module data from JS"
+    );
+    throw (ex);
+  }
 }
 
 auto getJSobj (T)(napi_env env, napi_value ctx, T * toRet) {
