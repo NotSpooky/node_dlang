@@ -53,7 +53,7 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
       , &returned
     );
     writeln (`Got status `, status);
-    if (status != napi_status.napi_ok) throw new Exception (`Call errored`);
+    if (status != napi_status.napi_ok) return status;
     
     alias RetType = ReturnType!R;
     static if (!is (RetType == void)) {
@@ -86,9 +86,6 @@ auto callNapi (Args ...)(napi_env env, napi_value context, napi_value func, Args
   }
   napi_value returned;
   auto status = napi_call_function (env, context, func, args.length, napiArgs.ptr, &returned);
-  debug {
-    stderr.writeln (`Call errored, got `, status);
-  }
   if (status != napi_status.napi_ok) throw new Exception (`Call errored`);
   return returned;
 }
@@ -129,7 +126,7 @@ struct JSobj (Funs...) {
   napi_env env;
   napi_ref ctxRef = null;
 
-  enum typeMsg = `JSObj template args should be pairs of strings with types`;
+  private enum typeMsg = `JSObj template args should be pairs of strings with types`;
   static assert (Funs.length % 2 == 0, typeMsg);
 
   // Creating a new object
@@ -210,15 +207,17 @@ struct JSobj (Funs...) {
 }
 
 alias Console = JSobj!(
-  `log`, void function (string str)
+  `log`, void function (napi_value toLog)
 );
 
 auto global (napi_env env, string name) {
   napi_value val;
   auto status = napi_get_global (env, &val);
   assert (status == napi_status.napi_ok);
-  return val;
+  return val.p (env, name);
 }
+
+auto console = (napi_env env) => fromNapi!Console (env, global (env, `console`));
 
 auto getJSobj (T)(napi_env env, napi_value ctx, T * toRet) {
   assert (toRet != null);
