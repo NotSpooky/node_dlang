@@ -10,15 +10,15 @@
 		{
 			"name": "node_dlang_windows",
 			"platforms": ["windows"],
-			"lflags": ["node.lib"],
-			"targetType": "staticLibrary"
+			"targetType": "staticLibrary",
+			"sourceFiles": ["./node.lib"]
 		}, {
-      "name": "node_dlang_posix",
-      "platforms": ["posix"],
-      "targetType" : "staticLibrary"
-    }
+			"name": "node_dlang_posix",
+			"platforms": ["posix"],
+			"targetType" : "staticLibrary"
+		}
 	],
-  "subPackages" : [
-    "./example/"
-  ]
+	"subPackages": [
+		"./example/"
+	]
 }

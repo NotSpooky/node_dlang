@@ -535,6 +535,8 @@ mixin template exportToJs (Functions ...) {
     }
   }
   extern (C) napi_value exportToJs (napi_env env, napi_value exports) {
+    import core.runtime;
+    Runtime.initialize ();
     auto addFunction (alias Function)() {
       napi_status status;
       napi_value fn;
@@ -587,8 +589,6 @@ mixin template exportToJs (Functions ...) {
   import core.sys.windows.windows;
   import core.sys.windows.dll;
   extern (C) pragma(crt_constructor) export __gshared void _register_NAPI_MODULE_NAME () {
-    import core.runtime;
-    Runtime.initialize ();
     napi_module_register (&_module);
   }
 }
