@@ -23,17 +23,42 @@ auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
 alias ExternD (T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
 alias ExternC (T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
 
-// Note: func must be alive.
-auto jsFunction (napi_env env, napi_value func, ExternD!(void delegate ())* toRet) {
-  napi_value global;
-  napi_status status = napi_get_global(env, &global);
-  if (status != napi_status.napi_ok) return status;
-  *toRet = () {
-    immutable argCount = 0;
-    napi_value [argCount] args;
-    size_t argCountMut = argCount;
+// If the first argument to the delegate (in other words, R) is a napi_value
+// that is used as the context.
+// Otherwise the global context is used.
+auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
+  alias Params = Parameters!R;
+  *toRet = (Params args) {
+    static if (args.length > 0 && is (Params [0] == napi_value)) {
+      // Use provided context.
+      napi_value context = args [0];
+      enum firstArgPos = 1;
+    } else {
+      napi_value context;
+      auto status = napi_get_global (env, &context);
+      assert (status == napi_status.napi_ok);
+      enum firstArgPos = 0;
+    }
+    napi_value [args.length - firstArgPos] napiArgs;
+    static foreach (i, arg; args [firstArgPos..$]) {
+      napiArgs [i] = arg.toNapiValue (env);
+    }
     napi_value returned;
-    napi_call_function (env, global, func, argCountMut, args.ptr, &returned);
+    status = napi_call_function (
+      env
+      , context
+      , func
+      , napiArgs.length
+      , napiArgs.ptr
+      , &returned
+    );
+    writeln (`Got status `, status);
+    if (status != napi_status.napi_ok) throw new Exception (`Call errored`);
+    
+    alias RetType = ReturnType!R;
+    static if (!is (RetType == void)) {
+      return fromNapi!RetType (env, returned);
+    }
   };
   return napi_status.napi_ok;
 }
@@ -61,6 +86,9 @@ auto callNapi (Args ...)(napi_env env, napi_value context, napi_value func, Args
   }
   napi_value returned;
   auto status = napi_call_function (env, context, func, args.length, napiArgs.ptr, &returned);
+  debug {
+    stderr.writeln (`Call errored, got `, status);
+  }
   if (status != napi_status.napi_ok) throw new Exception (`Call errored`);
   return returned;
 }
@@ -185,6 +213,13 @@ alias Console = JSobj!(
   `log`, void function (string str)
 );
 
+auto global (napi_env env, string name) {
+  napi_value val;
+  auto status = napi_get_global (env, &val);
+  assert (status == napi_status.napi_ok);
+  return val;
+}
+
 auto getJSobj (T)(napi_env env, napi_value ctx, T * toRet) {
   assert (toRet != null);
   *toRet = T (env, ctx);
@@ -245,7 +280,9 @@ auto getFloat (napi_env env, napi_value napiVal, float * toRet) {
 }
 
 template fromNapiB (T) {
-  static if (is (T == double)) {
+  static if (is (T == bool)) {
+    alias fromNapiB = napi_get_value_bool;
+  } else static if (is (T == double)) {
     alias fromNapiB = napi_get_value_double;
   } else static if (is (T == int)) {
     alias fromNapiB = napi_get_value_int32;
@@ -265,7 +302,8 @@ template fromNapiB (T) {
     alias fromNapiB = getNullable!A;
   } else static if (is (T == napi_value)) {
     alias fromNapiB = napiIdentity;
-  } else static if (is (T == void delegate ())) {
+  } else static if (isCallable!T) {
+  //} else static if (is (T == R delegate (), R)) {
     alias fromNapiB = jsFunction;
   } else static if (__traits(isSame, TemplateOf!(T), JSobj)) {
     alias fromNapiB = getJSobj;
@@ -354,7 +392,9 @@ auto nullableToNapi (T) (napi_env env, Nullable!T toConvert, napi_value * toRet)
 }
 
 template toNapi (T) {
-  static if (is (T == double)) {
+  static if (is (T == bool)) {
+    alias toNapi = napi_create_bool;
+  } static if (is (T == double)) {
     alias toNapi = napi_create_double;
   } else static if (is (T == int)) {
     alias toNapi = napi_create_int32;
@@ -368,6 +408,8 @@ template toNapi (T) {
     alias toNapi = napi_create_double;
   } else static if (is (T == string)) {
     alias toNapi = stringToNapi;
+  } else static if (is (T == napi_value)) {
+    alias toNapi = napiIdentity;
   } else static if (is (T == Nullable!A, A)) {
     alias toNapi = nullableToNapi!A;
   } else static if (is (T == A[], A)) {
@@ -507,7 +549,7 @@ mixin template exportToJs (Functions ...) {
         napi_throw_error(env, null, "Unable to wrap native function");
       } else {
         const fnName = Function.mangleof;
-        status = napi_set_named_property(env, exports, fnName.toStringz, fn);
+        status = napi_set_named_property (env, exports, fnName.toStringz, fn);
         if (status != napi_status.napi_ok) {
           napi_throw_error (
             env
