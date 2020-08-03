@@ -586,8 +586,10 @@ mixin template exportToJs (Functions ...) {
     , null
   };
   
-  import core.sys.windows.windows;
-  import core.sys.windows.dll;
+  version (Windows) { version (DigitalMars) {
+    void main () {} // Dunno why it's needed but whatever
+  }}
+
   extern (C) pragma(crt_constructor) export __gshared void _register_NAPI_MODULE_NAME () {
     napi_module_register (&_module);
   }

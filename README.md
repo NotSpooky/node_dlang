@@ -4,7 +4,7 @@ Package to create native NodeJS modules based on [N-API](https://nodejs.org/api/
 Tested on Linux and Windows with LDC compiler.
 
 # Requirements
-Just a D compiler (only tested on LDC) with the DUB package manager that is usually included with the compiler.
+Just a D compiler (currently tested with LDC and DMD on 64 bit Linux and Windows) with the DUB package manager that is usually included with the compiler.
 JavaScript is not necessary to generate the modules but NodeJS is needed to test the generated file.
 # Usage
 Create a DUB project with:
@@ -58,14 +58,28 @@ Then add your functions as normal D code (note, as they are using extern (C) the
 auto foo (int first, long second) {
 	return [first, second * 4, 0];
 }
+
+// Functions that you want executed on load must be void (napi_env)
+void atStart (napi_env env) {
+	import std.stdio;
+	writeln ("Hello from D!");
+}
 ```
 At the end of your file use a mixin to do all the magic:
 ```d
-mixin exportToJs! (foo); // Can add multiple functions as args
+// MainFunction is used to execute on load instead of registering to exports.
+mixin exportToJs! (foo, MainFunction!atStart);
 ```
 Add to exportToJs template args all the functions that you want to be able to use from JavaScript.
 ## Javascript side
 Make sure NodeJS is installed on your system.
+
+If you used MainFunction you can run your generated module.node directly:
+```shell
+node module.node
+```
+
+You can also require the module from JS:
 Example file:
 ```javascript
 // Use relative paths if you haven't made an NPM package yet
