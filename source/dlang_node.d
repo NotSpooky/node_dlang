@@ -2,7 +2,7 @@ module dlang_node;
 version (LDC) {
   pragma(LDC_no_moduleinfo);
 }
-public import js_native_api_types : napi_env;
+public import js_native_api_types : napi_env, napi_value, napi_callback;
 import node_api;
 import js_native_api;
 
@@ -386,9 +386,9 @@ napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
   }
   foreach (i, val; array) {
     // Create a napi_value for 'hello'
-    auto nv = val.toNapiValue(env);
+    auto nv = val.toNapiValue (env);
 
-    status = napi_set_element(env, *toRet, i.to!uint, nv);
+    status = napi_set_element (env, *toRet, i.to!uint, nv);
     if (status != napi_status.napi_ok) return status;
   }
   return status;
@@ -401,7 +401,8 @@ napi_status jsObjToNapi (T ...)(napi_env env, JSobj!T toConvert, napi_value * to
   return napi_status.napi_ok;
 }
 
-auto nullableToNapi (T) (napi_env env, Nullable!T toConvert, napi_value * toRet) {
+napi_status nullableToNapi (T) (napi_env env, Nullable!T toConvert, napi_value * toRet) {
+  assert (toRet != null);
   if (toConvert.isNull ()) {
     return napi_get_null (env, toRet);
   } else {
@@ -409,7 +410,26 @@ auto nullableToNapi (T) (napi_env env, Nullable!T toConvert, napi_value * toRet)
   }
 }
 
-template toNapi (T) {
+napi_status callbackToNapi (napi_env env, napi_callback toConvert, napi_value * toRet) {
+  assert (toRet != null);
+  return napi_create_function (env, null, 0, toConvert, null, toRet);
+}
+
+napi_status callbackToNapi (F)(
+  napi_env env
+  , napi_callback toConvert
+  , napi_value * toRet
+  , F * fPointer
+) {
+  assert (toRet != null);
+  return napi_create_function (env, null, 0, toConvert, fPointer, toRet);
+}
+
+napi_status callableToNapi (F)(napi_env env, F toCall, napi_value * toRet) {
+  return callbackToNapi (env, &fromJsPtr!F, toRet, toCall);
+}
+
+template toNapi (alias T) {
   static if (is (T == bool)) {
     alias toNapi = napi_create_bool;
   } static if (is (T == double)) {
@@ -426,10 +446,17 @@ template toNapi (T) {
     alias toNapi = napi_create_double;
   } else static if (is (T == string)) {
     alias toNapi = stringToNapi;
-  } else static if (is (T == napi_value)) {
-    alias toNapi = napiIdentity;
   } else static if (is (T == Nullable!A, A)) {
     alias toNapi = nullableToNapi!A;
+  } else static if (is (T == napi_value)) {
+    alias toNapi = napiIdentity;
+  } else static if (is (ExternC!T == napi_callback)) {
+    static if (!is (T == ExternC!T)) {
+      static assert (0, `Please use extern (C) for napi callbacks`);
+    }
+    alias toNapi = callbackToNapi;
+  } else static if (isCallable!T) {
+    alias toNapi = callableToNapi;
   } else static if (is (T == A[], A)) {
     alias toNapi = arrayToNapi;
   } else static if (__traits(isSame, TemplateOf!T, JSobj)) {
@@ -458,8 +485,12 @@ napi_value undefined (napi_env env) {
   return toRet;
 }
 
-auto fromJs (alias Function) (napi_env env, napi_callback_info info) {
-  alias FunParams = Parameters!Function;
+auto fromJsBase (F, alias toFinish)(
+  napi_env env
+  , napi_callback_info info
+  , void ** toCall = null
+) {
+  alias FunParams = Parameters!F;
   static if (FunParams.length > 0 && is (FunParams [0] == napi_env)) {
     immutable argCount = FunParams.length - 1;
     // First parameter is the env, which is from the 'env' param in fromJs.
@@ -473,12 +504,20 @@ auto fromJs (alias Function) (napi_env env, napi_callback_info info) {
   }
   napi_value [argCount] argVals;
   size_t argCountMut = argCount;
-  auto status = napi_get_cb_info (env, info, &argCountMut, argVals.ptr, null, null);
+  auto status = napi_get_cb_info (
+    env
+    , info
+    , &argCountMut
+    , argVals.ptr
+    , null
+    , toCall
+  );
   if (status != napi_status.napi_ok) {
     napi_throw_type_error (
       env
       , null
-      , (`Failed to parse arguments for function ` ~ Function.mangleof ~ `, incorrect amount?`).toStringz
+      , (`Failed to parse arguments for function ` ~ F.mangleof ~ `, incorrect amount?`)
+        .toStringz
     );
   }
   static foreach (i, Param; FunParams [firstValParam .. $]) {
@@ -492,7 +531,32 @@ auto fromJs (alias Function) (napi_env env, napi_callback_info info) {
     .map!`"param" ~ a.to!string`
     .joiner (`,`)
     .to!string;
-  mixin (`return Function (` ~ paramCalls ~ `);`);
+  enum toMix = q{toFinish (} ~ paramCalls ~ q{)};
+  enum retsVoid = Returns! (F, void);
+  static if (retsVoid) {
+    mixin (toMix ~ `;`);
+    return undefined (env);
+  } else {
+    mixin (q{return } ~ toMix ~ q{.toNapiValue (env);});
+  }
+}
+
+extern (C) napi_value fromJsPtr (F)(napi_env env, napi_callback_info info) {
+  F toCall;
+  return fromJsBase!(F, toCall) (env, info, cast (void **) & toCall);
+}
+
+extern (C) napi_value fromJs (alias Function)(
+  napi_env env
+  , napi_callback_info info
+) {
+  enum retsVoid = Returns! (Function, void);
+  return fromJsBase!(typeof(Function), Function) (env, info, null);
+}
+
+template Returns (alias Function, OtherType) {
+  import std.traits : ReturnType;
+  enum Returns = is (ReturnType!Function == OtherType);
 }
 
 extern (C) alias void func (napi_env);
@@ -519,54 +583,15 @@ mixin template exportToJs (Functions ...) {
   import js_native_api;
   import std.string : toStringz;
 
-  template Returns (alias Function, OtherType) {
-    import std.traits : ReturnType;
-    enum Returns = is (ReturnType!Function == OtherType);
-  }
-  template WrappedFunctionName (alias Function) {
-    enum WrappedFunctionName = `dlangnapi_` ~ Function.mangleof;
-  }
-  static foreach (Function; Functions) {
-    static if (! (isMainFunction!Function ())) {
-      // If the function doesn't manually return a napi_value, create a function
-      // that casts to napi_value.
-      static if (! Returns! (Function, napi_value)) {
-        // Create a function that casts the D type to JS one.
-        // That will be the function actually added to exports.
-
-        mixin (`extern (C) napi_value ` ~ WrappedFunctionName!Function
-            ~ `(napi_env env, napi_callback_info info) {`
-          ~ (Returns! (Function, void) // Check whether function returns or not.
-              // This version returns a napi_value with undefined.
-              ? q{
-                  fromJs!Function (env, info);
-                  return undefined (env);
-                }
-              // This version casts the returned D value to an napi_value
-              : q{
-                  return fromJs!Function (env, info).toNapiValue (env);
-                }
-            )
-          ~ `}`
-        );
-      }
-    }
-  }
   extern (C) napi_value exportToJs (napi_env env, napi_value exports) {
     import core.runtime;
     Runtime.initialize ();
     auto addFunction (alias Function)() {
       napi_status status;
       napi_value fn;
-      static if (Returns! (Function, napi_value)) {
-        alias FunToBind = Function;
-      } else {
-        // Use wrapper made above whose function returns a napi_value
-        mixin (`alias FunToBind = ` ~ WrappedFunctionName!Function ~ `;`);
-      }
-      status = napi_create_function (env, null, 0, &FunToBind, null, &fn);
+      status = napi_create_function (env, null, 0, &fromJs!Function, null, &fn);
       if (status != napi_status.napi_ok) {
-        napi_throw_error(env, null, "Unable to wrap native function");
+        napi_throw_error (env, null, "Was not able to wrap native function");
       } else {
         const fnName = Function.mangleof;
         status = napi_set_named_property (env, exports, fnName.toStringz, fn);
@@ -586,6 +611,7 @@ mixin template exportToJs (Functions ...) {
         Function.ToCall (env);
       } else {
         if (addFunction!Function () != napi_status.napi_ok) {
+          debug stderr.writeln (`Error registering function to JS`);
           return exports;
         } 
       }
@@ -608,7 +634,7 @@ mixin template exportToJs (Functions ...) {
     void main () {} // Dunno why it's needed but whatever
   }}
 
-  extern (C) pragma(crt_constructor) export __gshared void _register_NAPI_MODULE_NAME () {
+  extern (C) pragma (crt_constructor) export __gshared void _register_NAPI_MODULE_NAME () {
     napi_module_register (&_module);
   }
 }
