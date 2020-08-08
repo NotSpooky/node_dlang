@@ -130,7 +130,7 @@ struct JSobj (Funs...) {
 
   private enum typeMsg = `JSObj template args should be pairs of strings with types`;
   static assert (Funs.length % 2 == 0, typeMsg);
-
+  
   // Creating a new object
   this (napi_env env) {
     this.env = env;
@@ -175,25 +175,32 @@ struct JSobj (Funs...) {
   }
 
   static foreach (i, FunPosition; FunPositions) {
-      // Add function that simply uses callNapi.
-      mixin (q{
-        napi_value } ~ Funs [FunPosition] ~ q{
-          (Parameters!(Funs [FunPosition + 1]) args) {
-            auto context = val (env, this.ctxRef);
-            auto toCall = context.p (env, Funs [FunPosition]);
-            return callNapi (env, context, toCall, args);
+    // Add function that simply uses callNapi.
+    mixin (
+      q{auto } ~ Funs [FunPosition] ~ q{ (Parameters!(Funs [FunPosition + 1]) args) {
+        alias FunType = Funs [FunPosition + 1];
+        alias RetType = ReturnType!(FunType);
+          auto context = val (env, this.ctxRef);
+          auto toCall = context.p (env, Funs [FunPosition]);
+          static if (is (RetType == void)) {
+            callNapi (env, context, toCall, args);
+          } else {
+            return fromNapi!RetType (env, callNapi (env, context, toCall, args));
           }
         }
-      );
+      }
+    );
   }
   static foreach (i, FieldPosition; FieldPositions) {
     // Setter.
     mixin (q{
       void } ~ Funs [FieldPosition] ~ q{ (Funs [FieldPosition + 1] toSet) {
+        enum fieldName = Funs [FieldPosition];
         auto asNapi = toSet.toNapiValue (env);
-        auto propName = Funs [FieldPosition].toStringz;
+        auto propName = fieldName.toStringz;
         auto context = val (env, this.ctxRef);
-        napi_set_named_property (env, context, propName, asNapi);
+        auto status = napi_set_named_property (env, context, propName, asNapi);
+        assert (status == napi_status.napi_ok, `Couldn't set property ` ~ fieldName);
       }
     });
     // Getter.
@@ -485,7 +492,7 @@ napi_value undefined (napi_env env) {
   return toRet;
 }
 
-auto fromJsBase (F, alias toFinish)(
+private auto fromJsBase (F, alias toFinish)(
   napi_env env
   , napi_callback_info info
   , void ** toCall = null
@@ -562,7 +569,6 @@ template Returns (alias Function, OtherType) {
 extern (C) alias void func (napi_env);
 template MainFunction (alias Function) {
   alias ToCall = Function;
-  //pragma (msg, ExternD!(typeof (Function)).stringof);
   static assert (
     is (ExternC! (typeof (Function)) == func)
     , `MainFunction must be instantiated with a void function (napi_env)`
