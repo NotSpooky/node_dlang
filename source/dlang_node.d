@@ -1,7 +1,5 @@
 module dlang_node;
-version (LDC) {
-  pragma(LDC_no_moduleinfo);
-}
+
 public import js_native_api_types : napi_env, napi_value, napi_callback;
 import node_api;
 import js_native_api;

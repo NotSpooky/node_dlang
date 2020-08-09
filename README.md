@@ -38,7 +38,7 @@ You can check the example folder for a reference dub.json.
 
 Compile with
 ```shell
-dub --compiler=ldc2
+dub
 ```
 The resulting `module.node` file can be require'd from JavaScript.
 
@@ -48,12 +48,9 @@ Add at the beginning of your D file:
 ```d
 module your_module_name;
 import dlang_node;
-version (LDC) {
-  pragma (LDC_no_moduleinfo);
-}
 extern (C): // We need no mangling
 ```
-Then add your functions as normal D code (note, as they are using extern (C) they won't have mangling):
+Then add your functions as normal D code (note: they are using extern (C)):
 ```d
 auto foo (int first, long second) {
 	return [first, second * 4, 0];
