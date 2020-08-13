@@ -7,10 +7,26 @@ import js_native_api;
 import std.conv : to;
 import std.string : toStringz;
 import std.traits;
+import std.algorithm;
 debug import std.stdio;
 
-napi_status stringToNapi (napi_env env, string toCast, napi_value * toRet) {
-  return napi_create_string_utf8 (env, toCast.ptr, toCast.length, toRet);
+napi_status stringToNapi (StrType)(napi_env env, StrType toCast, napi_value * toRet) {
+  static if (is (StrType == string)){
+    alias NapiCharType = char;
+    alias conversionFunction = napi_create_string_utf8;
+  } else static if (is (StrType == wstring)) {
+    alias NapiCharType = ushort;
+    alias conversionFunction = napi_create_string_utf16;
+  } else static assert (
+    false
+    , `Cannot convert UTF32 strings (dstrings) to JS. Please use strings or wstrings instead`
+  );
+  return conversionFunction (
+    env
+    , cast (const NapiCharType *) toCast.ptr
+    , toCast.length
+    , toRet
+  );
 }
 
 auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
@@ -78,7 +94,19 @@ auto val (napi_env env, napi_ref reference) {
   return toRet;
 }
 
-// Will assume void ret for now
+class JSException : Exception {
+  napi_value jsException;
+  this (
+    napi_value jsException
+    , string message = `JS Exception`
+    , string file = __FILE__
+    , ulong line = cast (ulong) __LINE__
+    , Throwable nextInChain = null) {
+    this.jsException = jsException;
+    super (message, file, line, nextInChain);
+  }
+}
+
 auto callNapi (Args ...)(napi_env env, napi_value context, napi_value func, Args args) {
   napi_value [args.length] napiArgs;
   static foreach (i, arg; args) {
@@ -86,7 +114,16 @@ auto callNapi (Args ...)(napi_env env, napi_value context, napi_value func, Args
   }
   napi_value returned;
   auto status = napi_call_function (env, context, func, args.length, napiArgs.ptr, &returned);
-  if (status != napi_status.napi_ok) throw new Exception (`Call errored`);
+  import std.conv;
+  if (status == napi_status.napi_pending_exception) {
+    napi_value exceptionData;
+    debug stderr.writeln (`Got JS exception`);
+    napi_get_and_clear_last_exception (env, &exceptionData);
+    throw new JSException (exceptionData);
+  } else if (status != napi_status.napi_ok) {
+    debug stderr.writeln (`Got JS status `, status);
+    throw new Exception (text (`Call errored for args `, args));
+  }
   return returned;
 }
 
@@ -249,12 +286,23 @@ auto getJSobj (T)(napi_env env, napi_value ctx, T * toRet) {
   return napi_status.napi_ok;
 }
 
-auto getStr (napi_env env, napi_value napiVal, string * toRet) {
+auto getStr (StrType)(napi_env env, napi_value napiVal, StrType * toRet) {
   // Try with statically allocated buffer for small strings
-  char [2048] inBuffer;
   assert (toRet != null);
   size_t readChars = 0;
-  auto status = napi_get_value_string_utf8 (
+  static if (is (StrType == string)) {
+    alias CharType = char;
+    char [2048] inBuffer;
+    alias conversionFunction = napi_get_value_string_utf8;
+  } else static if (is (StrType == wstring)) {
+    alias CharType = wchar;
+    ushort [2048] inBuffer;
+    alias conversionFunction = napi_get_value_string_utf16;
+  } else static assert (
+    false
+    , `N-API doesn't provide conversion for UTF-32 (dstrings), use string or wstring instead`
+  );
+  auto status = conversionFunction (
     env
     , napiVal
     , inBuffer.ptr
@@ -270,7 +318,7 @@ auto getStr (napi_env env, napi_value napiVal, string * toRet) {
     // Technically this is not needed for the specific case of
     // exactly size inBuffer.length - 1
     // Get string size to allocate an array.
-    status = napi_get_value_string_utf8 (
+    status = conversionFunction (
       env
       , napiVal
       , null
@@ -279,8 +327,8 @@ auto getStr (napi_env env, napi_value napiVal, string * toRet) {
     );
     assert (status == napi_status.napi_ok);
     // Try again with bigger size.
-    auto buffer = new char [readChars + 1]; // include null terminator
-    status = napi_get_value_string_utf8 (
+    auto buffer = new typeof(inBuffer [0]) [readChars + 1]; // include null terminator
+    status = conversionFunction (
       env
       , napiVal
       , buffer.ptr
@@ -288,9 +336,10 @@ auto getStr (napi_env env, napi_value napiVal, string * toRet) {
       , & readChars
     );
     assert (status == napi_status.napi_ok);
-    *toRet = buffer.ptr [0..readChars].to!string;
+    *toRet = buffer.ptr [0..readChars].map!(to!CharType).to!StrType;
   } else {
-    *toRet = inBuffer.ptr [0..readChars].to!string;
+    // Got it on first try
+    *toRet = inBuffer.ptr [0..readChars].map!(to!CharType).to!StrType;
   }
   return napi_status.napi_ok;
 }
@@ -319,7 +368,7 @@ template fromNapiB (T) {
     alias fromNapiB = napi_get_value_double;
   } else static if (is (T == float)) {
     alias fromNapiB = getFloat;
-  } else static if (is (T == string)) {
+  } else static if (isSomeString!T) {
     alias fromNapiB = getStr;
   } else static if (is (T == Nullable!A, A)) {
     alias fromNapiB = getNullable!A;
@@ -449,7 +498,7 @@ template toNapi (alias T) {
     alias toNapi = napi_create_uint64;
   } else static if (is (T : double)) {
     alias toNapi = napi_create_double;
-  } else static if (is (T == string)) {
+  } else static if (isSomeString!T) {
     alias toNapi = stringToNapi;
   } else static if (is (T == Nullable!A, A)) {
     alias toNapi = nullableToNapi!A;
@@ -531,7 +580,6 @@ private auto fromJsBase (F, alias toFinish)(
   }
   // Now call Function with each of these casted values.
   import std.range;
-  import std.algorithm;
   enum paramCalls = envParam ~ iota (argCount)
     .map!`"param" ~ a.to!string`
     .joiner (`,`)
@@ -586,6 +634,7 @@ mixin template exportToJs (Functions ...) {
   import node_api;
   import js_native_api;
   import std.string : toStringz;
+  debug import std.stdio;
 
   extern (C) napi_value exportToJs (napi_env env, napi_value exports) {
     import core.runtime;

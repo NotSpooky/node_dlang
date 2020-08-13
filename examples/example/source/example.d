@@ -1,9 +1,4 @@
 import dlang_node;
-
-version (LDC) {
-  pragma (LDC_no_moduleinfo);
-}
-
 extern (C):
 
 auto kumiko(int first, long second) {
@@ -81,6 +76,10 @@ auto writeTabbed (T...) (T args) {
   writeln ('\t', args);
 }
 
+auto receivingRequire (napi_env env, napi_value delegate (string) req) {
+  console (env).log (req (`is-number`));
+}
+
 // Note: There's a convenience console (napi_env) on dlang_node
 // This is just an example receiving a Console object.
 auto logExample (napi_env env, Console console) {
@@ -93,4 +92,4 @@ void mainExample (napi_env env) {
   `Module started!`.writeTabbed;
 }
 
-mixin exportToJs!(MainFunction!mainExample, kumiko, fumiko, callbackExample, canvasExample, logExample);
+mixin exportToJs!(MainFunction!mainExample, kumiko, fumiko, callbackExample, canvasExample, logExample, receivingRequire);

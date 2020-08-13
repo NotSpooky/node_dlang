@@ -7,7 +7,7 @@
 	"license": "MIT",
 	"name": "example",
   "dependencies": {
-      "node_dlang": {"path": "../"}
+      "node_dlang": {"path": "../../"}
   },
 	"configurations": [
 		{

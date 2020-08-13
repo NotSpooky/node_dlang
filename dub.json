@@ -19,6 +19,7 @@
 		}
 	],
 	"subPackages": [
-		"./example/"
+		"./examples/example/",
+    "./examples/type_examples/"
 	]
 }
