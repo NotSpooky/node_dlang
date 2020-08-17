@@ -626,14 +626,19 @@ bool isMainFunction (alias Function) () if (isCallable!Function) {
 }
 import std.meta;
 bool isMainFunction (alias Function) () if (!isCallable!Function) {
-  assert (__traits (isSame, TemplateOf!(Function), MainFunction));
-  return true;
+  static if (__traits (compiles, TemplateOf!(Function))) {
+    assert (__traits (isSame, TemplateOf!(Function), MainFunction));
+    return true;
+  } else {
+    return false;
+  }
 }
 
 mixin template exportToJs (Functions ...) {
   import node_api;
   import js_native_api;
   import std.string : toStringz;
+  import std.traits;
   debug import std.stdio;
 
   extern (C) napi_value exportToJs (napi_env env, napi_value exports) {
@@ -658,15 +663,20 @@ mixin template exportToJs (Functions ...) {
       }
       return status;
     }
-    static foreach (Function; Functions) {
-      static if (isMainFunction!Function ()) {
-        // Just call it.
-        Function.ToCall (env);
-      } else {
+    static foreach (i, alias Function; Functions) {
+      static if (isCallable!Function) {
         if (addFunction!Function () != napi_status.napi_ok) {
           debug stderr.writeln (`Error registering function to JS`);
           return exports;
         } 
+      } else static if (isMainFunction!Function ()) {
+        // Just call it here (on module load).
+        Function.ToCall (env);
+      } else {
+        const fieldName = (Functions [i]).stringof.toStringz;
+        // It's a field.
+        auto toExp = Function.toNapiValue (env);
+        auto status = napi_set_named_property (env, exports, fieldName, toExp);
       }
     }
     return exports;
