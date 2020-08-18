@@ -1,4 +1,4 @@
-import dlang_node;
+import node_dlang;
 import std.stdio;
 import std.conv;
 extern (C):
@@ -63,6 +63,19 @@ napi_value useRequire (napi_value delegate (string path) require) {
   return require ("./example_required.js");
 }
 
+// We use this mixin to declare strongly typed JS Objects.
+mixin (jsObj (
+  `Console`
+  , q{ `log`, void function (napi_value toLog) }
+));
+
+// Note: In practice, you don't need to receive a Console object as you can
+// get it using 'global'
+long withJSObj (Console console) {
+  console.log (console.context ()); // Log itself for this example
+  return 600L;
+}
+
 // This mixin is needed to register the functions for JS usage
 // Functions marked with MainFunction aren't registered, if you need that
 // behavior add them both as MainFunction!funName and just funName
@@ -75,4 +88,5 @@ mixin exportToJs!(
   , returnsInt
   , returnsDouble
   , receiveCallback
+  , withJSObj
 );

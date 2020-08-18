@@ -1,4 +1,4 @@
-import dlang_node;
+import node_dlang;
 extern (C):
 
 auto kumiko(int first, long second) {
@@ -15,7 +15,7 @@ auto callbackExample (void delegate () callback) {
 }
 
 // Dechare methods of an object like this.
-alias CanvasRenderingContext2D = JSobj!(
+mixin (jsObj (`CanvasRenderingContext2D`, q{
   `fillStyle`, string
   , `arc`, void function (double x, double y, double r, double sAngle, double eAngle)
   , `beginPath`, void function ()
@@ -26,7 +26,7 @@ alias CanvasRenderingContext2D = JSobj!(
   , `fillText`, void function (string text, double x, double y)
   , `lineTo`, void function (double x, double y)
   , `stroke`, void function ()
-);
+}));
 
 // Can use them just receiving an object of that type :D
 auto canvasExample (CanvasRenderingContext2D ctx) {

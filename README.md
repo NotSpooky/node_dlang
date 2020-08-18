@@ -48,7 +48,7 @@ You probably want to check the code at examples/type\_examples.
 Add at the beginning of your D file:
 ```d
 module your_module_name;
-import dlang_node;
+import node_dlang;
 extern (C): // We need no mangling
 ```
 Then add your functions as normal D code (note: they are using extern (C)):

@@ -23,3 +23,5 @@ assert (nativeModule.concatText("Hello there!", "General kenobi") == "Hello ther
 assert (nativeModule.useRequire (require) == ":D");
 
 assert (nativeModule.receiveCallback (() => 5) == 40);
+
+nativeModule.withJSObj (console);
