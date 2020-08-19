@@ -43,7 +43,7 @@ dub
 The resulting `module.node` file can be require'd from JavaScript.
 
 # Code example
-You probably want to check the code at examples/type\_examples.
+You probably want to check the code at [examples/type\_examples](examples/type_examples).
 ## D side
 Add at the beginning of your D file:
 ```d
