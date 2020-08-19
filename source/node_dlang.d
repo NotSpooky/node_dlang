@@ -146,8 +146,6 @@ struct JSObj (Template) {
   alias FieldNames = FieldNameTuple!Template;
   alias FieldTypes = Fields!Template;
   static assert (FieldNames.length == FieldTypes.length);
-  pragma (msg, `Got as field names `, FieldNames);
-  pragma (msg, `Got as field types `, FieldTypes);
   // Useful for type checking. 
   enum dlangNodeIsJSObj = true;
   private static auto positions () {
