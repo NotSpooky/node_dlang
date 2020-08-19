@@ -139,10 +139,10 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
 }
 
 struct JSObj (Template) {
-  static assert (
+  /+static assert (
     __traits (isPOD, Template)
     , `JSObj template arguments must be plain old data structs`
-  );
+  );+/
   alias FieldNames = FieldNameTuple!Template;
   alias FieldTypes = Fields!Template;
   static assert (FieldNames.length == FieldTypes.length);
