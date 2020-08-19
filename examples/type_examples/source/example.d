@@ -63,14 +63,15 @@ napi_value useRequire (napi_value delegate (string path) require) {
   return require ("./example_required.js");
 }
 
-// We use this mixin to declare strongly typed JS Objects.
-mixin (jsObj (
-  `Console`
-  , q{ `log`, void function (napi_value toLog) }
-));
+struct Console_ {
+  void function (napi_value toLog) log;
+}
 
-// Note: In practice, you don't need to receive a Console object as you can
-// get it using 'global'
+// We use JSObj to declare strongly typed JS objects.
+alias Console = JSObj!Console_;
+
+// Note: In practice, you don't need to receive a Console object from a JS parameter
+// as you can get it using 'global' instead
 long withJSObj (Console console) {
   console.log (console.context ()); // Log itself for this example
   return 600L;

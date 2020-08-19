@@ -138,142 +138,128 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
   return toRet;
 }
 
-/// Returns a string to use with mixin (thisResult);
-/// It declares a struct with 'name' as identifier
-/// exports must consist of an string of alternating member names and types.
-/// Usage of https://dlang.org/spec/lex.html#DelimitedString is higly recommended.
-/// For example:
-/// jsObj (`Console`, q{ `log`, void function (napi_value toLog) });
-/// returns a string that when mixed, declares struct Console, with member log.
-/// Implemented as a string mixin instead of normal template
-///  so that symbol names don't get unbearably long.
-auto jsObj (string name, string exports) {
-  string exportsName = name ~ `Exports`;
-  return q{
-  import node_api;
-  import js_native_api;
-  import std.traits;
-  import std.meta;
-  import std.conv;
-
-  alias } ~ exportsName ~ q{ = AliasSeq!(} ~ exports ~ q{);
-  struct } ~ name ~ ` {
-    // Allows using q-strings on the rest of the code.
-    alias exportsAlias = ` ~ exportsName ~ q{;
-    // Useful for type checking. 
-    enum dlangNodeIsJSObj = true;
-    private static auto positions () {
-      size_t [] funPositions;
-      size_t [] fieldPositions;
-      static foreach (i; 0 .. exportsAlias.length / 2) {
-        static if (isFunctionPointer!(exportsAlias [1 + i * 2])) {
-          funPositions ~= i * 2;
-        } else {
-          fieldPositions ~= i * 2;
-        }
+struct JSObj (Template) {
+  static assert (
+    __traits (isPOD, Template)
+    , `JSObj template arguments must be plain old data structs`
+  );
+  alias FieldNames = FieldNameTuple!Template;
+  alias FieldTypes = Fields!Template;
+  static assert (FieldNames.length == FieldTypes.length);
+  pragma (msg, `Got as field names `, FieldNames);
+  pragma (msg, `Got as field types `, FieldTypes);
+  // Useful for type checking. 
+  enum dlangNodeIsJSObj = true;
+  private static auto positions () {
+    size_t [] funPositions;
+    size_t [] fieldPositions;
+    static foreach (i; 0 .. FieldTypes.length) {
+      static if (isFunctionPointer!(FieldTypes [i])) {
+        funPositions ~= i;
+      } else {
+        fieldPositions ~= i;
       }
-      import std.typecons : tuple;
-      return tuple!(`funPositions`, `fieldPositions`) (funPositions, fieldPositions);
     }
-    private enum Positions = positions ();
-    private enum FunPositions = Positions.funPositions;
-    private enum FieldPositions = Positions.fieldPositions;
+    import std.typecons : tuple;
+    return tuple!(`funPositions`, `fieldPositions`) (funPositions, fieldPositions);
+  }
+  private enum Positions = positions ();
+  private enum FunPositions = Positions.funPositions;
+  private enum FieldPositions = Positions.fieldPositions;
 
-    napi_env env;
-    napi_ref ctxRef = null;
+  napi_env env;
+  napi_ref ctxRef = null;
 
-    private enum typeMsg = `JSObj template args should be pairs of strings with types`;
-    static assert (exportsAlias.length % 2 == 0, typeMsg);
-    
-    // Creating a new object
-    this (napi_env env) {
-      this.env = env;
-      auto context = new napi_value ();
-      auto status = napi_create_object (env, context);
+  private enum typeMsg = `JSObj template args should be pairs of strings with types`;
+  // Creating a new object
+  this (napi_env env) {
+    this.env = env;
+    auto context = new napi_value ();
+    auto status = napi_create_object (env, context);
+    assert (status == napi_status.napi_ok);
+    ctxRef = reference (env, *context);
+  }
+
+  // Assigning from a JS object.
+  this (napi_env env, napi_value context) {
+    this.env = env;
+    // Keep alive. Note this will NEVER be GC'ed
+    ctxRef = reference (env, context);
+  }
+  
+  this (ref return scope typeof (this) rhs) {
+    // writeln (`Copying ` ~ Funs.stringof);
+    this.env = rhs.env;
+    this.ctxRef = rhs.ctxRef;
+    if (ctxRef != null) {
+      auto status = napi_reference_ref (env, ctxRef, null);
+      //writeln (`> Ref count is `, currentRefCount);
       assert (status == napi_status.napi_ok);
-      ctxRef = reference (env, *context);
     }
+  }
+  ~this () {
+    // writeln ("Destructing JSobj " ~ exportsAlias.stringof);
+    // uint currentRefCount;
+    if (ctxRef != null) {
+      auto status = napi_reference_unref (env, ctxRef, null);
+      assert (
+        status == napi_status.napi_ok
+        , `Got status when doing unref ` ~ status.to!string
+      );
+      //writeln (`< Ref count is `, currentRefCount);
+    }
+  }
+  
+  auto context () {
+    return val (env, this.ctxRef);
+  }
 
-    // Assigning from a JS object.
-    this (napi_env env, napi_value context) {
-      this.env = env;
-      // Keep alive. Note this will NEVER be GC'ed
-      ctxRef = reference (env, context);
-    }
-    
-    this (ref return scope typeof (this) rhs) {
-      // writeln (`Copying ` ~ Funs.stringof);
-      this.env = rhs.env;
-      this.ctxRef = rhs.ctxRef;
-      if (ctxRef != null) {
-        auto status = napi_reference_ref (env, ctxRef, null);
-        //writeln (`> Ref count is `, currentRefCount);
-        assert (status == napi_status.napi_ok);
-      }
-    }
-    ~this () {
-      // writeln ("Destructing JSobj " ~ exportsAlias.stringof);
-      // uint currentRefCount;
-      if (ctxRef != null) {
-        auto status = napi_reference_unref (env, ctxRef, null);
-        assert (
-          status == napi_status.napi_ok
-          , `Got status when doing unref ` ~ status.to!string
-        );
-        //writeln (`< Ref count is `, currentRefCount);
-      }
-    }
-    
-    auto context () {
-      return val (env, this.ctxRef);
-    }
-
-    static foreach (i, FunPosition; FunPositions) {
-      // Add function that simply uses callNapi.
-      mixin (
-        q{auto } ~ exportsAlias [FunPosition] ~ q{ (Parameters!(exportsAlias [FunPosition + 1]) args) {
-          alias FunType = exportsAlias [FunPosition + 1];
-          alias RetType = ReturnType!(FunType);
-            auto context = val (env, this.ctxRef);
-            auto toCall = context.p (env, exportsAlias [FunPosition]);
-            static if (is (RetType == void)) {
-              callNapi (env, context, toCall, args);
-            } else {
-              return fromNapi!RetType (env, callNapi (env, context, toCall, args));
-            }
+  static foreach (i, FunPosition; FunPositions) {
+    // Add function that simply uses callNapi.
+    mixin (
+      q{auto } ~ FieldNames [FunPosition] ~ q{ (Parameters!(FieldTypes[FunPosition]) args) {
+        alias FunType = FieldTypes [FunPosition];
+        alias RetType = ReturnType!(FunType);
+          auto context = val (env, this.ctxRef);
+          auto toCall = context.p (env, FieldNames [FunPosition]);
+          static if (is (RetType == void)) {
+            callNapi (env, context, toCall, args);
+          } else {
+            return fromNapi!RetType (env, callNapi (env, context, toCall, args));
           }
         }
-      );
-    }
-    static foreach (i, FieldPosition; FieldPositions) {
-      // Setter.
-      mixin (q{
-        void } ~ exportsAlias [FieldPosition] ~ q{ (exportsAlias [FieldPosition + 1] toSet) {
-          enum fieldName = exportsAlias [FieldPosition];
-          auto asNapi = toSet.toNapiValue (env);
-          auto propName = fieldName.toStringz;
-          auto context = val (env, this.ctxRef);
-          auto status = napi_set_named_property (env, context, propName, asNapi);
-          assert (status == napi_status.napi_ok, `Couldn't set property ` ~ fieldName);
-        }
-      });
-      // Getter.
-      mixin (q{
-        auto } ~ exportsAlias [FieldPosition] ~ q{ () {
-          return fromNapi!(exportsAlias [FieldPosition + 1]) (
-            env,
-            val (env, this.ctxRef).p (env, exportsAlias [FieldPosition])
-          );
-        }
-      });
-    }
-  } ~ `}`;
+      }
+    );
+  }
+  static foreach (i, FieldPosition; FieldPositions) {
+    // Setter.
+    mixin (q{
+      void } ~ FieldNames [FieldPosition] ~ q{ (FieldTypes [FieldPosition] toSet) {
+        enum fieldName = FieldNames [FieldPosition];
+        auto asNapi = toSet.toNapiValue (env);
+        auto propName = fieldName.toStringz;
+        auto context = val (env, this.ctxRef);
+        auto status = napi_set_named_property (env, context, propName, asNapi);
+        assert (status == napi_status.napi_ok, `Couldn't set property ` ~ fieldName);
+      }
+    });
+    // Getter.
+    mixin (q{
+      auto } ~ FieldNames [FieldPosition] ~ q{ () {
+        return fromNapi!(FieldTypes [FieldPosition]) (
+          env,
+          val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
+        );
+      }
+    });
+  }
 };
 
 // Convenience console type.
-mixin (jsObj (`Console`, q{
-  `log`, void function (napi_value toLog)
-}));
+private struct Console_ {
+  void function (napi_value toLog) log;
+};
+alias Console = JSObj!Console_;
 
 auto console = (napi_env env) => fromNapi!Console (env, global (env, `console`));
 auto global (napi_env env) {
