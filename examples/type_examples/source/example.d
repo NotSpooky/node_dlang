@@ -58,8 +58,6 @@ auto receiveCallback (int delegate () getSomeInt) {
 // If you need to use NodeJS pseudo globals and aren't using something like
 // electron, the easiest way is receiving the function from JS.
 napi_value useRequire (napi_value delegate (string path) require) {
-  // Note that this call will throw an exception if is-odd is not installed.
-  // TODO: Add a JS file instead of using external library for easier usage.
   return require ("./example_required.js");
 }
 
@@ -77,6 +75,28 @@ long withJSObj (Console console) {
   return 600L;
 }
 
+import std.typecons : Nullable, nullable;
+import std.variant : Algebraic;
+struct VariableTypes_ {
+  Algebraic!(int, string) intStringProp;
+  Nullable!uint maybeUint;
+}
+alias VariableTypes = JSObj!VariableTypes_;
+
+VariableTypes withVariableTypes (VariableTypes data) {
+  // To get from Algebraics, the type must be specified:
+  assert (data.intStringProp!string == "Hello");
+  // Undefined and nulls from JS become nulls here.
+  assert (data.maybeUint.isNull ());
+  data.maybeUint = Nullable!uint (5); // Can also use .nullable
+  // Algebraics can be set like this
+  data.intStringProp = 6;
+  // Or this:
+  // But this way is more verbose and internally slower.
+  data.intStringProp = Algebraic!(int, string) (7);
+  return data;
+}
+
 // This mixin is needed to register the functions for JS usage
 // Functions marked with MainFunction aren't registered, if you need that
 // behavior add them both as MainFunction!funName and just funName
@@ -90,4 +110,5 @@ mixin exportToJs!(
   , returnsDouble
   , receiveCallback
   , withJSObj
+  , withVariableTypes
 );

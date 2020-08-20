@@ -24,4 +24,9 @@ assert (nativeModule.useRequire (require) == ":D");
 
 assert (nativeModule.receiveCallback (() => 5) == 40);
 
+// Example sending weakly typed/potentially absent data.
+var received = nativeModule.withVariableTypes ({intStringProp: "Hello"});
+assert (received.intStringProp == 7);
+assert (received.maybeUint == 5);
+
 nativeModule.withJSObj (console);
