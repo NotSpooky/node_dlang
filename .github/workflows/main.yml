@@ -11,7 +11,7 @@ jobs:
       name: Run JS and D
       strategy:
         matrix:
-          os: [ubuntu-latest, windows-latest, macOS-latest]
+          os: [ubuntu-latest, windows-latest]
           dc: [dmd-latest, ldc-latest]
           node-version: [12.x]
       runs-on: ${{ matrix.os }}
