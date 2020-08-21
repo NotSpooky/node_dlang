@@ -38,7 +38,7 @@ You can check the example folder for a reference dub.json.
 
 Compile with
 ```shell
-dub
+dub build
 ```
 The resulting `module.node` file can be require'd from JavaScript.
 

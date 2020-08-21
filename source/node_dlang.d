@@ -587,7 +587,7 @@ napi_value toNapiValue (F)(
   F toCast, napi_env env
 ) {
   napi_value toRet;
-  auto status = toNapi!F(env, toCast, &toRet);
+  auto status = toNapi!F (env, toCast, &toRet);
   if (status != napi_status.napi_ok) {
     env.throwInJS (`Unable to create JS value for: ` ~ toCast.to!string);
   }
