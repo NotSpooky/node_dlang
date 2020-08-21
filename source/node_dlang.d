@@ -42,12 +42,15 @@ auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
 alias ExternD (T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
 alias ExternC (T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
 
+
 // If the first argument to the delegate (in other words, R) is a napi_value
 // that is used as the context.
 // Otherwise the global context is used.
 auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
   alias Params = Parameters!R;
-  *toRet = (Params args) {
+  alias RetType = ReturnType!R;
+  // Cannot assign toRet here or LDC complains :(
+  auto foo = delegate RetType (Params args) {
     static if (args.length > 0 && is (Params [0] == napi_value)) {
       // Use provided context.
       napi_value context = args [0];
@@ -76,11 +79,11 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
       throw new Exception (`JS call errored :(`);
     }
     
-    alias RetType = ReturnType!R;
     static if (!is (RetType == void)) {
       return fromNapi!RetType (env, returned);
     }
   };
+  *toRet = cast (R) foo;
   return napi_status.napi_ok;
 }
 
@@ -532,7 +535,6 @@ napi_status callableToNapi (F)(napi_env env, F toCall, napi_value * toRet) {
 napi_status algebraicToNapi (T ...)(napi_env env, VariantN!T toConvert, napi_value * toRet) {
   static assert (T.length > 1);
   foreach (possibleType; T [1..$]) {
-    pragma (msg, `Got as algebraic ` ~ possibleType.stringof);
     auto valueTried = toConvert.peek!possibleType;
     if (valueTried != null) {
       *toRet = toNapiValue (*valueTried, env);
