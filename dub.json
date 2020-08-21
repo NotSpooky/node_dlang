@@ -3,7 +3,7 @@
 		"Nemo"
 	],
 	"copyright": "Copyright © 2020, Nemo",
-	"description": "Native node module creator",
+	"description": "Native NodeJS® module creator",
 	"license": "MIT",
 	"name": "node_dlang",
 	"configurations": [

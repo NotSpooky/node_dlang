@@ -27,7 +27,8 @@
       "targetType": "dynamicLibrary",
       "postGenerateCommands": [
         "mv libmodule.node.so module.node"
-      ]
+      ],
+      "lflags": ["--allow-shlib-undefined"]
     }
   ]
 }

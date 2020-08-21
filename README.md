@@ -1,10 +1,11 @@
+![Type example test](https://github.com/NotSpooky/node_dlang/workflows/Type%20example%20test/badge.svg?branch=master)
 # Node dlang
 ### **Note: This is currently in early state of development, expect breaking changes!**
-Package to create native NodeJS modules based on [N-API](https://nodejs.org/api/n-api.html "N-API")
-Tested on Linux and Windows with LDC compiler.
+Package to create native NodeJS modules based on [N-API](https://nodejs.org/api/n-api.html "N-API").
+Tested on 64 bit Linux and Windows with LDC and DMD compilers.
 
 # Requirements
-Just a D compiler (currently tested with LDC and DMD on 64 bit Linux and Windows) with the DUB package manager that is usually included with the compiler.
+Just a D compiler and DUB package manager (usually included with the compiler).
 JavaScript is not necessary to generate the modules but NodeJS is needed to test the generated file.
 # Usage
 Create a DUB project with:
