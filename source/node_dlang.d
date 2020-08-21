@@ -10,6 +10,11 @@ import std.traits;
 import std.algorithm;
 debug import std.stdio;
 
+import std.variant;
+template isVariantN (alias T) {
+  enum isVariantN = __traits(isSame, TemplateOf!T, VariantN);
+}
+
 napi_status stringToNapi (StrType)(napi_env env, StrType toCast, napi_value * toRet) {
   static if (is (StrType == string)){
     alias NapiCharType = char;
@@ -231,6 +236,21 @@ struct JSObj (Template) {
   }
   static foreach (i, FieldPosition; FieldPositions) {
     // Setter.
+    static if (isVariantN! (FieldTypes [FieldPosition])) {
+      // Also add implicit conversions :)
+      static foreach (PossibleType; TemplateArgsOf!(FieldTypes [FieldPosition])[1..$]) {
+        mixin (q{
+          void } ~ FieldNames [FieldPosition] ~ q{ (PossibleType toSet) {
+            enum fieldName = FieldNames [FieldPosition];
+            auto asNapi = toSet.toNapiValue (env);
+            auto propName = fieldName.toStringz;
+            auto context = val (env, this.ctxRef);
+            auto status = napi_set_named_property (env, context, propName, asNapi);
+            assert (status == napi_status.napi_ok, `Couldn't set property ` ~ fieldName);
+          }
+        });
+      };
+    }
     mixin (q{
       void } ~ FieldNames [FieldPosition] ~ q{ (FieldTypes [FieldPosition] toSet) {
         enum fieldName = FieldNames [FieldPosition];
@@ -242,24 +262,40 @@ struct JSObj (Template) {
       }
     });
     // Getter.
-    mixin (q{
-      auto } ~ FieldNames [FieldPosition] ~ q{ () {
-        return fromNapi!(FieldTypes [FieldPosition]) (
-          env,
-          val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
-        );
-      }
-    });
+    // Pretty similar in both cases, would like to deduplicate it but
+    // static foreach is fun.
+    static if (isVariantN! (FieldTypes [FieldPosition])) {
+      // Getting Algebraics/VariantNs must specify the returned type.
+      mixin (q{
+        auto } ~ FieldNames [FieldPosition] ~ q{ (Type) () {
+          return fromNapi!Type (
+            env
+            , val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
+          );
+        }
+      });
+    } else {
+      mixin (q{
+        auto } ~ FieldNames [FieldPosition] ~ q{ () {
+          return fromNapi!(FieldTypes [FieldPosition]) (
+            env,
+            val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
+          );
+        }
+      });
+    }
   }
 };
 
 // Convenience console type.
 private struct Console_ {
-  void function (napi_value toLog) log;
+  void function (napi_value) log;
 };
 alias Console = JSObj!Console_;
-
 auto console = (napi_env env) => fromNapi!Console (env, global (env, `console`));
+void jsLog (T)(napi_env env, T toLog) {
+  console (env).log (toLog.toNapiValue (env));
+}
 auto global (napi_env env) {
   napi_value val;
   auto status = napi_get_global (env, &val);
@@ -384,6 +420,11 @@ template fromNapiB (T) {
     alias fromNapiB = jsFunction;
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
     alias fromNapiB = getJSobj;
+  } else static if (isVariantN!T) {
+    static assert (
+      0
+      , `Don't use fromNapiB to get a VariantN/Algebraic, get the expected type instead`
+    );
   } else {
     static assert (0, `Not implemented: Convertion from JS type for ` ~ T.stringof);
   }
@@ -488,6 +529,19 @@ napi_status callableToNapi (F)(napi_env env, F toCall, napi_value * toRet) {
   return callbackToNapi (env, &fromJsPtr!F, toRet, toCall);
 }
 
+napi_status algebraicToNapi (T ...)(napi_env env, VariantN!T toConvert, napi_value * toRet) {
+  static assert (T.length > 1);
+  foreach (possibleType; T [1..$]) {
+    pragma (msg, `Got as algebraic ` ~ possibleType.stringof);
+    auto valueTried = toConvert.peek!possibleType;
+    if (valueTried != null) {
+      *toRet = toNapiValue (*valueTried, env);
+      return napi_status.napi_ok;
+    }
+  }
+  assert (0, `Could not get value from Algebraic/VariantN`);
+}
+
 template toNapi (alias T) {
   static if (is (T == bool)) {
     alias toNapi = napi_create_bool;
@@ -520,6 +574,8 @@ template toNapi (alias T) {
     alias toNapi = arrayToNapi;
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
     alias toNapi = jsObjToNapi;
+  } else static if (isVariantN!T) {
+    alias toNapi = algebraicToNapi;
   } else {
     static assert (0, `Not implemented: Conversion to JS type for ` ~ T.stringof);
   }

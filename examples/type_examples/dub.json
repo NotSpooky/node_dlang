@@ -17,8 +17,7 @@
 			"targetPath" : ".",
       "targetName" : "module.node",
       "postGenerateCommands": [
-        "move module.node.dll module.node",
-        "node example.js"
+        "move module.node.dll module.node"
       ]
     }, 
     {
@@ -27,9 +26,8 @@
       "targetName" : "module.node",
       "targetType": "dynamicLibrary",
       "postGenerateCommands": [
-        "mv libmodule.node.so module.node",
-        "node example.js"
-        ]
+        "mv libmodule.node.so module.node"
+      ]
     }
   ]
 }
