@@ -145,6 +145,14 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
   }
   return toRet;
 }
+// Assign a property.
+void p (InType) (napi_value obj, napi_env env, string propName, InType newVal) {
+  auto key = propName.toNapiValue (env);
+  auto status = napi_set_property (env, obj, key, newVal.toNapiValue (env));
+  if (status != napi_status.napi_ok) {
+    throw new Exception (`Failed to set property ` ~ propName);
+  }
+}
 
 struct JSObj (Template) {
   /+static assert (
