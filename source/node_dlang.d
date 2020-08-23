@@ -151,6 +151,12 @@ struct JSObj (Template) {
     __traits (isPOD, Template)
     , `JSObj template arguments must be plain old data structs`
   );+/
+
+  /// Convenience console.log (this) function
+  void jsLog () {
+    console (this.env).log (this.context);
+  }
+
   alias FieldNames = FieldNameTuple!Template;
   alias FieldTypes = Fields!Template;
   static assert (FieldNames.length == FieldTypes.length);
@@ -308,7 +314,9 @@ auto global (napi_env env) {
 auto global (napi_env env, string name) {
   return global (env).p (env, name);
 }
-
+auto global (RetType)(napi_env env, string name) {
+  return fromNapi!RetType (env, global (env, name));
+}
 
 /// Note: Only available if the module's globals have 'require' which is not usually
 /// the case
