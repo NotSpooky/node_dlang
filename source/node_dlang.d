@@ -154,12 +154,35 @@ void p (InType) (napi_value obj, napi_env env, string propName, InType newVal) {
   }
 }
 
-struct JSObj (Template) {
-  /+static assert (
-    __traits (isPOD, Template)
-    , `JSObj template arguments must be plain old data structs`
-  );+/
+struct JSVar {
+  napi_env env;
+  napi_ref ctxRef;
+  
+  this (napi_env env, napi_value val) {
+    this.env = env;
+    this.ctxRef = reference (env, val);
+  }
 
+  auto context () {
+    return val (env, this.ctxRef);
+  }
+  
+  template opDispatch (string s) {
+    void opDispatch (T)(T toAssign) {
+      auto asNapi = toAssign.toNapiValue (env);
+      this.context.p (env, s, asNapi);
+    }
+    T opDispatch () {
+      return fromNapi!T (env, this.context.p (env, s));
+    }
+  }
+
+  auto jsLog () {
+    console (this.env).log (this.context ());
+  }
+}
+
+struct JSObj (Template) {
   /// Convenience console.log (this) function
   void jsLog () {
     console (this.env).log (this.context);
@@ -411,6 +434,11 @@ auto getFloat (napi_env env, napi_value napiVal, float * toRet) {
   return status;
 }
 
+auto getJSVar (napi_env env, napi_value napiVal, JSVar * toRet) {
+  *toRet = JSVar (env, napiVal);
+  return napi_status.napi_ok;
+}
+
 template fromNapiB (T) {
   static if (is (T == bool)) {
     alias fromNapiB = napi_get_value_bool;
@@ -437,6 +465,8 @@ template fromNapiB (T) {
   } else static if (isCallable!T) {
   //} else static if (is (T == R delegate (), R)) {
     alias fromNapiB = jsFunction;
+  } else static if (is (T == JSVar)) {
+    alias fromNapiB = getJSVar;
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
     alias fromNapiB = getJSobj;
   } else static if (isVariantN!T) {
@@ -560,6 +590,12 @@ napi_status algebraicToNapi (T ...)(napi_env env, VariantN!T toConvert, napi_val
   assert (0, `Could not get value from Algebraic/VariantN`);
 }
 
+napi_status jsVarToNapi (napi_env env, JSVar toConvert, napi_value * toRet) {
+  assert (env == toConvert.env, `JS environments don't match`);
+  *toRet = toConvert.context ();
+  return napi_status.napi_ok;
+}
+
 template toNapi (alias T) {
   static if (is (T == bool)) {
     alias toNapi = napi_create_bool;
@@ -590,6 +626,8 @@ template toNapi (alias T) {
     alias toNapi = callableToNapi;
   } else static if (is (T == A[], A)) {
     alias toNapi = arrayToNapi;
+  } else static if (is (T == JSVar)) {
+    alias toNapi = jsVarToNapi;
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
     alias toNapi = jsObjToNapi;
   } else static if (isVariantN!T) {
