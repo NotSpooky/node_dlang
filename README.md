@@ -1,4 +1,5 @@
-![Type example test](https://github.com/NotSpooky/node_dlang/workflows/Type%20example%20test/badge.svg?branch=master)
+![Actions CI](https://github.com/NotSpooky/node_dlang/workflows/Type%20example%20test/badge.svg?branch=master)
+![License](https://img.shields.io/badge/license-MIT-9cf)
 # Node dlang
 ### **Note: This is currently in early state of development, expect breaking changes!**
 Package to create native NodeJS modules based on [N-API](https://nodejs.org/api/n-api.html "N-API").
