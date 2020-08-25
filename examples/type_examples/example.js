@@ -59,4 +59,6 @@ assert (nativeModule.withJSVar (someObj) == 42);
 // D can also export constant values
 assert (nativeModule.dConstVal == 800);
 
+assert (nativeModule.invertBool (true) === false);
+
 console.log ('All tests passed!');

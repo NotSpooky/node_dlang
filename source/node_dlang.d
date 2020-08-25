@@ -567,6 +567,10 @@ void throwInJS (napi_env env, string message) {
   napi_throw_error (env, null, message.toStringz);
 }
 
+napi_status boolToNapi (napi_env env, bool toConvert, napi_value * toRet) {
+  return napi_get_boolean (env, toConvert, toRet);
+}
+
 napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
   napi_status status = napi_status.napi_generic_failure;
   assert (toRet != null);
@@ -642,7 +646,7 @@ napi_status jsVarToNapi (napi_env env, JSVar toConvert, napi_value * toRet) {
 
 template toNapi (alias T) {
   static if (is (T == bool)) {
-    alias toNapi = napi_create_bool;
+    alias toNapi = boolToNapi;
   } static if (is (T == double)) {
     alias toNapi = napi_create_double;
   } else static if (is (T == int)) {

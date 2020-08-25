@@ -25,6 +25,8 @@ napi_value returnsNapiValue (napi_env env) {
   return toNapiValue (78, env);
 }
 
+bool invertBool (bool toInvert) { return !toInvert; }
+
 // Functions that receive napi_value as args, don't cast their input.
 int duplicateAnInteger (napi_env env, napi_value toDuplicate) {
   // fromNapi allows you to cast 'napi_value's to D types.
@@ -138,6 +140,7 @@ immutable dConstVal = 800;
 mixin exportToJs!(
   MainFunction!onStart
   , returnsNapiValue
+  , invertBool
   , duplicateAnInteger
   , concatText
   , useRequire
