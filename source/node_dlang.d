@@ -217,6 +217,10 @@ struct JSVar {
   auto jsLog () {
     console (this.env).log (this.context ());
   }
+
+  auto opCast (T) () {
+    return fromNapi!T (env, this.context ());
+  }
 }
 
 struct JSObj (Template) {

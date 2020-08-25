@@ -51,8 +51,12 @@ assert (received.maybeUint == 5);
 var someObj = {
   someProp: {
     someFunCall: (numToDup) => numToDup * 2
-  }
+  },
+  someOtherFun: () => 20
 };
 assert (nativeModule.withJSVar (someObj) == 42);
+
+// D can also export constant values
+assert (nativeModule.dConstVal == 800);
 
 console.log ('All tests passed!');
