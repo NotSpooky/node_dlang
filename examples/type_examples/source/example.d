@@ -54,14 +54,27 @@ auto receivesCallback (int delegate () getSomeInt) {
 }
 
 // Callbacks can be static functions, function pointers or delegates
+
+// Function pointers and static functions don't need any special handling.
+int staticFun (int toDup) {
+  return toDup * 2;
+}
+auto returnsCallbackStaticFun () {
+  return &staticFun;
+}
+
+auto returnsCallbackFP () {
+  return function (int foo) { return foo + 3; };
+}
+
 // In the delegate case a pointer to the delegate must be returned and it must
 // be kept alive while JS uses it.
-// Here it's stored globally so that it isn't collected ever. 
 // Be careful when assigning the delegate in javascript, especially for async
 // functions, as not having a D reference to the pointer would allow D's GC to
 // collect it.
+// Here it's stored globally so that it isn't collected while D is alive. 
 extern (D) int delegate () savedDgRef;
-auto returnsCallback (int foo) {
+auto returnsCallbackDg (int foo) {
   // LDC doesn't implicitly cast this extern (D) delegate to extern (C), so
   // I declared savedDgRef as extern (D).
   savedDgRef = delegate () { return foo * 5; };
@@ -74,30 +87,29 @@ napi_value useRequire (napi_value delegate (string path) require) {
   return require ("./example_required.js");
 }
 
-struct Console_ {
-  void function (napi_value toLog) log;
+struct SomeJSObj_ {
+  int someIntValue;
+  int function () someIntFun;
 }
 
 // We use JSObj to declare strongly typed JS objects.
-alias Console = JSObj!Console_;
+alias SomeJSObj = JSObj!SomeJSObj_;
 
-// Note: In practice, you don't need to receive a Console object from a JS parameter
-// as you can use the jsLog function for JSObj and JSVar or get the console object
-// from globals using the function called 'global' instead
-long withJSObj (Console console) {
-  console.log (console.context ()); // Log itself for this example
-  return 600L;
+long withJSObj (SomeJSObj foo) {
+  // JSObj also adds convenience functions such as jsLog:
+  foo.jsLog ();
+  return foo.someIntFun () - foo.someIntValue;
 }
 
 import std.typecons : Nullable, nullable;
 import std.variant : Algebraic;
-struct VariableTypes_ {
-  Algebraic!(int, string) intStringProp;
+struct VariantTypes_ {
+  Algebraic! (int, string) intStringProp;
   Nullable!uint maybeUint;
 }
-alias VariableTypes = JSObj!VariableTypes_;
+alias VariantTypes = JSObj!VariantTypes_;
 
-VariableTypes withVariableTypes (VariableTypes data) {
+VariantTypes withVariantTypes (VariantTypes data) {
   // To get from Algebraics, the type must be specified:
   assert (data.intStringProp!string == "Hello");
   // Undefined and nulls from JS become nulls here.
@@ -107,8 +119,14 @@ VariableTypes withVariableTypes (VariableTypes data) {
   data.intStringProp = 6;
   // Or this:
   // But this way is more verbose and internally slower.
-  data.intStringProp = Algebraic!(int, string) (7);
+  data.intStringProp = Algebraic! (int, string) (7);
   return data;
+}
+
+auto withJSVar (JSVar weaklyTyped) {
+  // Fields are accesed with ["name"] syntax and have D type JSVar too.
+  // Functions are called with normal funcall syntax
+  return weaklyTyped [`someProp`].someFunCall (21);
 }
 
 // This mixin is needed to register the functions for JS usage
@@ -123,7 +141,10 @@ mixin exportToJs!(
   , returnsInt
   , returnsDouble
   , receivesCallback
-  , returnsCallback
+  , returnsCallbackStaticFun
+  , returnsCallbackFP
+  , returnsCallbackDg
   , withJSObj
-  , withVariableTypes
+  , withVariantTypes
+  , withJSVar
 );

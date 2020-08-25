@@ -22,16 +22,37 @@ assert (nativeModule.concatText("Hello there!", "General kenobi") == "Hello ther
 // argument.
 assert (nativeModule.useRequire (require) == ":D");
 
+// Sending a callback to D
 assert (nativeModule.receivesCallback (() => 5) == 40);
-var nativeDg = nativeModule.returnsCallback (4);
-console.log (nativeDg);
+
+// On JS side, D static functions, delegates and function pointers are handled the same:
+var nativeStaticFun = nativeModule.returnsCallbackStaticFun ();
+assert (nativeStaticFun (2) == 4);
+
+var nativeFP = nativeModule.returnsCallbackFP ();
+assert (nativeFP (5) == 8);
+
+var nativeDg = nativeModule.returnsCallbackDg (4);
 assert (nativeDg () == 20);
 
-// Example sending weakly typed/potentially absent data.
-var received = nativeModule.withVariableTypes ({intStringProp: "Hello"});
+// Example sending strongly typed data (JSObj):
+// Note: On D side this object is also printed.
+assert (nativeModule.withJSObj ({ someIntValue: 45, someIntFun: () => 60 }) == 15);
+
+// Example sending algebraic typed (data can be one of several strongly typed options)
+// or potentially absent data:
+var received = nativeModule.withVariantTypes ({intStringProp: "Hello"});
 assert (received.intStringProp == 7);
 assert (received.maybeUint == 5);
 
-nativeModule.withJSObj (console);
+// Example sending weakly typed (without a signature on the D side) data.
+// This can be either achieved with raw N-API napi_vales like some examples above,
+// or the more convenient and high level JSVar like here.
+var someObj = {
+  someProp: {
+    someFunCall: (numToDup) => numToDup * 2
+  }
+};
+assert (nativeModule.withJSVar (someObj) == 42);
 
 console.log ('All tests passed!');

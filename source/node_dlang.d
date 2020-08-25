@@ -4,7 +4,7 @@ public import js_native_api_types : napi_env, napi_value, napi_callback;
 import node_api;
 import js_native_api;
 
-import std.conv : to;
+import std.conv : to, text;
 import std.string : toStringz;
 import std.traits;
 import std.algorithm;
@@ -49,7 +49,7 @@ alias ExternC (T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
 auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
   alias Params = Parameters!R;
   alias RetType = ReturnType!R;
-  // Cannot assign toRet here or LDC complains :(
+  // Cannot assign toRet here for extern(C) Rs or LDC complains :(
   auto foo = delegate RetType (Params args) {
     static if (args.length > 0 && is (Params [0] == napi_value)) {
       // Use provided context.
@@ -91,9 +91,12 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
 auto reference (napi_env env, napi_value obj) {
   napi_ref toRet;
   auto status = napi_create_reference (env, obj, 1, &toRet);
-  if (status != napi_status.napi_ok) throw new Exception (`Reference creation failed`);
+  if (status != napi_status.napi_ok) throw new Exception (
+    text (`Reference creation failed: `, status)
+  );
   return toRet;
 }
+
 // Note this might escape values out of scope
 auto val (napi_env env, napi_ref reference) {
   napi_value toRet;
@@ -123,7 +126,6 @@ auto callNapi (Args ...)(napi_env env, napi_value context, napi_value func, Args
   }
   napi_value returned;
   auto status = napi_call_function (env, context, func, args.length, napiArgs.ptr, &returned);
-  import std.conv;
   if (status == napi_status.napi_pending_exception) {
     napi_value exceptionData;
     debug stderr.writeln (`Got JS exception`);
@@ -155,16 +157,35 @@ void p (InType) (napi_value obj, napi_env env, string propName, InType newVal) {
   }
 }
 
+private {
+  struct NapiRefWithId { napi_ref v; }
+  struct NapiValWithId { napi_value v; }
+}
+
 struct JSVar {
   napi_env env;
-  napi_ref ctxRef;
-  this (napi_env env, napi_value val) {
+  // DMD seems to handle well the difference between napi_ref and napi_value
+  // but LDC doesn't, so wrapped the types.
+  alias CtxRefT = Algebraic! (NapiRefWithId, NapiValWithId);
+  CtxRefT ctxRef;
+  this (napi_env env, napi_value nVal) {
+    assert (env != null && nVal != null);
     this.env = env;
-    this.ctxRef = reference (env, val);
+    napi_valuetype napiType;
+    assert (napi_typeof(env, nVal, &napiType) == napi_status.napi_ok);
+    if (napiType == napi_valuetype.napi_object) {
+      this.ctxRef = NapiRefWithId (reference (env, nVal));
+    } else {
+      // TODO: Check cases such as functions which might be problematic.
+      this.ctxRef = NapiValWithId (nVal);
+    }
   }
 
   auto context () {
-    return val (env, this.ctxRef);
+    return ctxRef.visit! (
+      (NapiValWithId v) => v.v
+      , (NapiRefWithId r) => val (env, r.v)
+    );
   }
 
   auto toNapiValue (napi_env env) {
@@ -173,7 +194,6 @@ struct JSVar {
   }
 
   auto opIndex (string propName) {
-    writeln (`Getting prop name `, propName);
     return context.p!JSVar (env, propName);
   }
 
@@ -182,18 +202,14 @@ struct JSVar {
   }
 
   template opDispatch (string s) {
-    T opDispatch (T) () {
-      writeln (`Getting property `, s);
-      return this.context.p!T (env, s);
-    }
-    R opDispatch (R = void, T...)(T args) {
-      auto toCall = this
-        .context ()
-        .p! (R delegate (napi_value, T))(env, s);
+    R opDispatch (R = JSVar, T...)(T args) {
+      auto ctx = this.context ();
+      auto toCallAsNapi = ctx.p(env, s);
+      auto asCallable = fromNapi! (R delegate (napi_value, T))(env, toCallAsNapi);
       static if (is (R == void)) {
-        toCall (this.context, args);
+        asCallable (ctx, args);
       } else {
-        return toCall (this.context, args);
+        return asCallable (ctx, args);
       }
     }
   }
@@ -252,7 +268,6 @@ struct JSObj (Template) {
   }
   
   this (ref return scope typeof (this) rhs) {
-    // writeln (`Copying ` ~ Funs.stringof);
     this.env = rhs.env;
     this.ctxRef = rhs.ctxRef;
     if (ctxRef != null) {
@@ -486,7 +501,6 @@ template fromNapiB (T) {
   } else static if (is (T == napi_value)) {
     alias fromNapiB = napiIdentity;
   } else static if (isCallable!T) {
-  //} else static if (is (T == R delegate (), R)) {
     alias fromNapiB = jsFunction;
   } else static if (is (T == JSVar)) {
     alias fromNapiB = getJSVar;
@@ -598,7 +612,7 @@ napi_status delegateToNapi (Dg)(napi_env env, Dg * toCall, napi_value * toRet) {
   return callbackToNapi (env, &fromJsPtr!(Dg), toRet, toCall);
 }
 
-napi_status callableToNapi (F)(napi_env env, ref F toCall, napi_value * toRet) {
+napi_status callableToNapi (F)(napi_env env, F toCall, napi_value * toRet) {
   assert (toRet != null);
   static assert (!isDelegate!(F), `Use delegateToNapi instead`);
   return callbackToNapi (env, &fromJsPtr!F, toRet, toCall);
@@ -646,6 +660,10 @@ template toNapi (alias T) {
   } else static if (is (T == Dg*, Dg)) {
     static if (isDelegate!Dg) {
       alias toNapi = delegateToNapi;
+    } else static if (isFunctionPointer!T){
+      alias toNapi = callableToNapi;
+    } else {
+      static assert (0, `Not implemented: Conversion to JS type for ` ~ T.stringof);
     }
   } else static if (isDelegate!T) {
     static assert (
@@ -657,12 +675,8 @@ template toNapi (alias T) {
       static assert (0, `Please use extern (C) for napi callbacks`);
     }
     alias toNapi = callbackToNapi;
-  } else static if (isCallable!T) {
-    alias toNapi = callableToNapi;
   } else static if (is (T == A[], A)) {
     alias toNapi = arrayToNapi;
-  } else static if (is (T == JSVar)) {
-    alias toNapi = jsVarToNapi;
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
     alias toNapi = jsObjToNapi;
   } else static if (isVariantN!T) {
