@@ -51,7 +51,8 @@ assert (received.maybeUint == 5);
 var someObj = {
   someProp: {
     someFunCall: (numToDup) => numToDup * 2
-  }
+  },
+  someOtherFun: () => 20
 };
 assert (nativeModule.withJSVar (someObj) == 42);
 

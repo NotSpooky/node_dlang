@@ -126,6 +126,7 @@ VariantTypes withVariantTypes (VariantTypes data) {
 auto withJSVar (JSVar weaklyTyped) {
   // Fields are accesed with ["name"] syntax and have D type JSVar too.
   // Functions are called with normal funcall syntax
+  assert (cast (int) (weaklyTyped.someOtherFun ()) == 20);
   return weaklyTyped [`someProp`].someFunCall (21);
 }
 
