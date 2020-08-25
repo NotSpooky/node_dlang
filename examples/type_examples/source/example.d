@@ -48,12 +48,25 @@ wstring concatText (string firstText, wstring secondText) {
 }
 
 // You can receive callbacks with delegates.
-auto receiveCallback (int delegate () getSomeInt) {
+auto receivesCallback (int delegate () getSomeInt) {
   int calledFromJS = getSomeInt ();
   return calledFromJS * 8;
 }
 
-// TODO: Send callbacks
+// Callbacks can be static functions, function pointers or delegates
+// In the delegate case a pointer to the delegate must be returned and it must
+// be kept alive while JS uses it.
+// Here it's stored globally so that it isn't collected ever. 
+// Be careful when assigning the delegate in javascript, especially for async
+// functions, as not having a D reference to the pointer would allow D's GC to
+// collect it.
+extern (D) int delegate () savedDgRef;
+auto returnsCallback (int foo) {
+  // LDC doesn't implicitly cast this extern (D) delegate to extern (C), so
+  // I declared savedDgRef as extern (D).
+  savedDgRef = delegate () { return foo * 5; };
+  return & savedDgRef;
+}
 
 // If you need to use NodeJS pseudo globals and aren't using something like
 // electron, the easiest way is receiving the function from JS.
@@ -69,7 +82,8 @@ struct Console_ {
 alias Console = JSObj!Console_;
 
 // Note: In practice, you don't need to receive a Console object from a JS parameter
-// as you can get it using 'global' instead
+// as you can use the jsLog function for JSObj and JSVar or get the console object
+// from globals using the function called 'global' instead
 long withJSObj (Console console) {
   console.log (console.context ()); // Log itself for this example
   return 600L;
@@ -108,7 +122,8 @@ mixin exportToJs!(
   , useRequire
   , returnsInt
   , returnsDouble
-  , receiveCallback
+  , receivesCallback
+  , returnsCallback
   , withJSObj
   , withVariableTypes
 );

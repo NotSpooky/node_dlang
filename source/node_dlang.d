@@ -187,7 +187,6 @@ struct JSVar {
       return this.context.p!T (env, s);
     }
     R opDispatch (R = void, T...)(T args) {
-      writeln (`Calling `, s, ` with `, args);
       auto toCall = this
         .context ()
         .p! (R delegate (napi_value, T))(env, s);
@@ -593,17 +592,16 @@ napi_status callbackToNapi (F)(
   return napi_create_function (env, null, 0, toConvert, fPointer, toRet);
 }
 
-DelegateCtx tempPlsDelet; // Here for testing because it won't be collected.
-napi_status callableToNapi (F)(napi_env env, F toCall, napi_value * toRet) {
+napi_status delegateToNapi (Dg)(napi_env env, Dg * toCall, napi_value * toRet) {
   assert (toRet != null);
-  static if (is (F == delegate)) {
-    alias Params = Parameters!F;
-    alias Ret = ReturnType!F;
-    tempPlsDelet = DelegateCtx (toCall.funcptr, toCall.ptr);
-    return callbackToNapi (env, &fromJsPtr!F, toRet, &tempPlsDelet);
-  } else {
-    return callbackToNapi (env, &fromJsPtr!F, toRet, toCall);
-  }
+  static assert (isDelegate!(Dg));
+  return callbackToNapi (env, &fromJsPtr!(Dg), toRet, toCall);
+}
+
+napi_status callableToNapi (F)(napi_env env, ref F toCall, napi_value * toRet) {
+  assert (toRet != null);
+  static assert (!isDelegate!(F), `Use delegateToNapi instead`);
+  return callbackToNapi (env, &fromJsPtr!F, toRet, toCall);
 }
 
 napi_status algebraicToNapi (T ...)(napi_env env, VariantN!T toConvert, napi_value * toRet) {
@@ -645,6 +643,15 @@ template toNapi (alias T) {
     alias toNapi = nullableToNapi!A;
   } else static if (is (T == napi_value)) {
     alias toNapi = napiIdentity;
+  } else static if (is (T == Dg*, Dg)) {
+    static if (isDelegate!Dg) {
+      alias toNapi = delegateToNapi;
+    }
+  } else static if (isDelegate!T) {
+    static assert (
+      0
+      , `Delegates must be sent as pointers to the delegate because of memory management`
+    );
   } else static if (is (ExternC!T == napi_callback)) {
     static if (!is (T == ExternC!T)) {
       static assert (0, `Please use extern (C) for napi callbacks`);
@@ -682,11 +689,6 @@ napi_value undefined (napi_env env) {
     env.throwInJS (`Unable to return void (undefined in JS)`);
   }
   return toRet;
-}
-
-struct DelegateCtx {
-  void * funcptr;
-  void * ptr;
 }
 
 private auto convertNapiSignature (F, alias toFinish)(
@@ -736,9 +738,12 @@ private auto convertNapiSignature (F, alias toFinish)(
     .to!string;
   static if (isDelegate!toFinish) {
     assert (delegateDataPtr != null);
-    auto dData = cast (DelegateCtx*) *delegateDataPtr;
+    auto tmp = cast (F**) delegateDataPtr;
+    toFinish = **tmp;
+    /+
     toFinish.funcptr = cast (typeof (toFinish.funcptr)) dData.funcptr;
     toFinish.ptr = dData.ptr;
+    +/
   }
   enum toMix = q{toFinish (} ~ paramCalls ~ q{)};
   enum retsVoid = Returns! (F, void);
@@ -760,7 +765,6 @@ extern (C) napi_value withNapiExpectedSignature (alias Function)(
   napi_env env
   , napi_callback_info info
 ) {
-  pragma (msg, `withNapiExpectedSignature ` ~ typeof (Function).stringof);
   return convertNapiSignature!(typeof(Function), Function) (env, info, null);
 }
 

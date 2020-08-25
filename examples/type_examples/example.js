@@ -22,7 +22,10 @@ assert (nativeModule.concatText("Hello there!", "General kenobi") == "Hello ther
 // argument.
 assert (nativeModule.useRequire (require) == ":D");
 
-assert (nativeModule.receiveCallback (() => 5) == 40);
+assert (nativeModule.receivesCallback (() => 5) == 40);
+var nativeDg = nativeModule.returnsCallback (4);
+console.log (nativeDg);
+assert (nativeDg () == 20);
 
 // Example sending weakly typed/potentially absent data.
 var received = nativeModule.withVariableTypes ({intStringProp: "Hello"});
@@ -30,3 +33,5 @@ assert (received.intStringProp == 7);
 assert (received.maybeUint == 5);
 
 nativeModule.withJSObj (console);
+
+console.log ('All tests passed!');
