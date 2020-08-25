@@ -53,6 +53,7 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
   auto foo = delegate RetType (Params args) {
     static if (args.length > 0 && is (Params [0] == napi_value)) {
       // Use provided context.
+      auto status = napi_status.napi_generic_failure;
       napi_value context = args [0];
       enum firstArgPos = 1;
     } else {
@@ -62,7 +63,7 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
       enum firstArgPos = 0;
     }
     napi_value [args.length - firstArgPos] napiArgs;
-    static foreach (i, arg; args [firstArgPos..$]) {
+    foreach (i, arg; args [firstArgPos..$]) {
       napiArgs [i] = arg.toNapiValue (env);
     }
     napi_value returned;
@@ -143,7 +144,7 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
   if (status != napi_status.napi_ok) {
     throw new Exception (`Failed to get property ` ~ propName);
   }
-  return toRet;
+  return fromNapi!RetType (env, toRet);
 }
 // Assign a property.
 void p (InType) (napi_value obj, napi_env env, string propName, InType newVal) {
@@ -157,7 +158,6 @@ void p (InType) (napi_value obj, napi_env env, string propName, InType newVal) {
 struct JSVar {
   napi_env env;
   napi_ref ctxRef;
-  
   this (napi_env env, napi_value val) {
     this.env = env;
     this.ctxRef = reference (env, val);
@@ -166,14 +166,36 @@ struct JSVar {
   auto context () {
     return val (env, this.ctxRef);
   }
-  
+
+  auto toNapiValue (napi_env env) {
+    assert (this.context () != null);
+    return this.context ();
+  }
+
+  auto opIndex (string propName) {
+    writeln (`Getting prop name `, propName);
+    return context.p!JSVar (env, propName);
+  }
+
+  auto opIndexAssign (T)(T toAssign, string propName) {
+    context ().p (env, propName, toAssign);
+  }
+
   template opDispatch (string s) {
-    void opDispatch (T)(T toAssign) {
-      auto asNapi = toAssign.toNapiValue (env);
-      this.context.p (env, s, asNapi);
+    T opDispatch (T) () {
+      writeln (`Getting property `, s);
+      return this.context.p!T (env, s);
     }
-    T opDispatch () {
-      return fromNapi!T (env, this.context.p (env, s));
+    R opDispatch (R = void, T...)(T args) {
+      writeln (`Calling `, s, ` with `, args);
+      auto toCall = this
+        .context ()
+        .p! (R delegate (napi_value, T))(env, s);
+      static if (is (R == void)) {
+        toCall (this.context, args);
+      } else {
+        return toCall (this.context, args);
+      }
     }
   }
 
@@ -264,11 +286,13 @@ struct JSObj (Template) {
         alias FunType = FieldTypes [FunPosition];
         alias RetType = ReturnType!(FunType);
           auto context = val (env, this.ctxRef);
-          auto toCall = context.p (env, FieldNames [FunPosition]);
+          auto toCall = context
+            .p! (RetType delegate (napi_value, Parameters!FunType))
+              (env, FieldNames [FunPosition]);
           static if (is (RetType == void)) {
-            callNapi (env, context, toCall, args);
+            toCall (context, args);
           } else {
-            return fromNapi!RetType (env, callNapi (env, context, toCall, args));
+            return toCall (context, args);
           }
         }
       }
@@ -339,7 +363,7 @@ void jsLog (T)(napi_env env, T toLog) {
 auto global (napi_env env) {
   napi_value val;
   auto status = napi_get_global (env, &val);
-  assert (status == napi_status.napi_ok);
+  assert (status == napi_status.napi_ok, `Couldn't get global context`);
   return val;
 }
 auto global (napi_env env, string name) {
@@ -559,11 +583,6 @@ napi_status nullableToNapi (T) (napi_env env, Nullable!T toConvert, napi_value *
   }
 }
 
-napi_status callbackToNapi (napi_env env, napi_callback toConvert, napi_value * toRet) {
-  assert (toRet != null);
-  return napi_create_function (env, null, 0, toConvert, null, toRet);
-}
-
 napi_status callbackToNapi (F)(
   napi_env env
   , napi_callback toConvert
@@ -574,8 +593,17 @@ napi_status callbackToNapi (F)(
   return napi_create_function (env, null, 0, toConvert, fPointer, toRet);
 }
 
+DelegateCtx tempPlsDelet; // Here for testing because it won't be collected.
 napi_status callableToNapi (F)(napi_env env, F toCall, napi_value * toRet) {
-  return callbackToNapi (env, &fromJsPtr!F, toRet, toCall);
+  assert (toRet != null);
+  static if (is (F == delegate)) {
+    alias Params = Parameters!F;
+    alias Ret = ReturnType!F;
+    tempPlsDelet = DelegateCtx (toCall.funcptr, toCall.ptr);
+    return callbackToNapi (env, &fromJsPtr!F, toRet, &tempPlsDelet);
+  } else {
+    return callbackToNapi (env, &fromJsPtr!F, toRet, toCall);
+  }
 }
 
 napi_status algebraicToNapi (T ...)(napi_env env, VariantN!T toConvert, napi_value * toRet) {
@@ -656,15 +684,20 @@ napi_value undefined (napi_env env) {
   return toRet;
 }
 
-private auto fromJsBase (F, alias toFinish)(
+struct DelegateCtx {
+  void * funcptr;
+  void * ptr;
+}
+
+private auto convertNapiSignature (F, alias toFinish)(
   napi_env env
   , napi_callback_info info
-  , void ** toCall = null
+  , void ** delegateDataPtr = null
 ) {
   alias FunParams = Parameters!F;
   static if (FunParams.length > 0 && is (FunParams [0] == napi_env)) {
     immutable argCount = FunParams.length - 1;
-    // First parameter is the env, which is from the 'env' param in fromJs.
+    // First parameter is the env, which is from the 'env' param in withNapiExpectedSignature.
     // Thus it isn't stored as an napi_value.
     enum envParam = `env, `;
     enum firstValParam = 1;
@@ -681,7 +714,7 @@ private auto fromJsBase (F, alias toFinish)(
     , &argCountMut
     , argVals.ptr
     , null
-    , toCall
+    , delegateDataPtr
   );
   if (status != napi_status.napi_ok) {
     napi_throw_type_error (
@@ -701,6 +734,12 @@ private auto fromJsBase (F, alias toFinish)(
     .map!`"param" ~ a.to!string`
     .joiner (`,`)
     .to!string;
+  static if (isDelegate!toFinish) {
+    assert (delegateDataPtr != null);
+    auto dData = cast (DelegateCtx*) *delegateDataPtr;
+    toFinish.funcptr = cast (typeof (toFinish.funcptr)) dData.funcptr;
+    toFinish.ptr = dData.ptr;
+  }
   enum toMix = q{toFinish (} ~ paramCalls ~ q{)};
   enum retsVoid = Returns! (F, void);
   static if (retsVoid) {
@@ -712,16 +751,17 @@ private auto fromJsBase (F, alias toFinish)(
 }
 
 extern (C) napi_value fromJsPtr (F)(napi_env env, napi_callback_info info) {
+  // It's a function pointer type, so must allocate it.
   F toCall;
-  return fromJsBase!(F, toCall) (env, info, cast (void **) & toCall);
+  return convertNapiSignature!(F, toCall) (env, info, cast (void **) & toCall);
 }
 
-extern (C) napi_value fromJs (alias Function)(
+extern (C) napi_value withNapiExpectedSignature (alias Function)(
   napi_env env
   , napi_callback_info info
 ) {
-  enum retsVoid = Returns! (Function, void);
-  return fromJsBase!(typeof(Function), Function) (env, info, null);
+  pragma (msg, `withNapiExpectedSignature ` ~ typeof (Function).stringof);
+  return convertNapiSignature!(typeof(Function), Function) (env, info, null);
 }
 
 template Returns (alias Function, OtherType) {
@@ -763,7 +803,14 @@ mixin template exportToJs (Exportables ...) {
     auto addExportable (alias Exportable)() {
       napi_status status;
       napi_value fn;
-      status = napi_create_function (env, null, 0, &fromJs!Exportable, null, &fn);
+      status = napi_create_function (
+        env
+        , null
+        , 0
+        , &withNapiExpectedSignature!Exportable
+        , null
+        , &fn
+      );
       if (status != napi_status.napi_ok) {
         napi_throw_error (env, null, "Was not able to wrap native function");
       } else {
