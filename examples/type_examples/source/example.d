@@ -94,13 +94,26 @@ struct SomeJSObj_ {
   int someIntFun ();
 }
 
-// We use JSObj to declare strongly typed JS objects.
-alias SomeJSObj = JSObj!SomeJSObj_;
-
 long withJSObj (SomeJSObj foo) {
   // JSObj also adds convenience functions such as jsLog:
   foo.jsLog ();
   return foo.someIntFun () - foo.someIntValue;
+}
+
+// We use JSObj to declare strongly typed JS objects.
+alias SomeJSObj = JSObj!SomeJSObj_;
+
+struct WithReassignableFun_ {
+  string function () someStringFun;
+}
+string newFun () { return `world`; }
+alias WithReassignableFun = JSObj!WithReassignableFun_;
+void reassignFun (WithReassignableFun toEdit) {
+  // Do note that function pointers become delegates when using them
+  // as they need some internal context for the conversion.
+  // That behavior is transparent for the user.
+  assert (toEdit.someStringFun () == `Hello`);
+  toEdit.someStringFun = &newFun;
 }
 
 import std.typecons : Nullable, nullable;
@@ -151,6 +164,7 @@ mixin exportToJs!(
   , returnsCallbackFP
   , returnsCallbackDg
   , withJSObj
+  , reassignFun
   , withVariantTypes
   , withJSVar
   , dConstVal

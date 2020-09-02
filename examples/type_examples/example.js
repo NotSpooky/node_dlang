@@ -39,6 +39,13 @@ assert (nativeDg () == 20);
 // Note: On D side this object is also printed.
 assert (nativeModule.withJSObj ({ someIntValue: 45, someIntFun: () => 60 }) == 15);
 
+// Reassignment of functions can be done with function pointer types on D
+var objWithFun = {
+  someStringFun: () => "Hello"
+}
+nativeModule.reassignFun (objWithFun);
+assert (objWithFun.someStringFun () == "world");
+
 // Example sending algebraic typed (data can be one of several strongly typed options)
 // or potentially absent data:
 var received = nativeModule.withVariantTypes ({intStringProp: "Hello"});
@@ -60,5 +67,6 @@ assert (nativeModule.withJSVar (someObj) == 42);
 assert (nativeModule.dConstVal == 800);
 
 assert (nativeModule.invertBool (true) === false);
+
 
 console.log ('All tests passed!');

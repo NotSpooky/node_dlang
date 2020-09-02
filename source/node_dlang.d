@@ -369,14 +369,28 @@ struct JSObj (Template) {
         }
       });
     } else {
-      mixin (q{
-        auto } ~ FieldNames [FieldPosition] ~ q{ () {
-          return fromNapi!(FieldTypes [FieldPosition]) (
+      static if (isFunctionPointer! (FieldTypes [FieldPosition])) {
+        // Function pointers must become delegates because jsFunction
+        // adds a context.
+        // They also have a different signature so that two sets of parens
+        // aren't needed to call them.
+        mixin (q{auto } ~ FieldNames [FieldPosition] ~ q{ (Parameters!(FieldTypes [FieldPosition]) args) {
+          import std.functional : toDelegate;
+          alias RetType = typeof (FieldTypes [FieldPosition].init.toDelegate);
+          return fromNapi!RetType (
+            env,
+            val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
+          ) (args);
+        }});
+      } else {
+        // Other types use a direct getter function.
+        mixin (q{auto } ~ FieldNames [FieldPosition] ~ q{ () {
+          return fromNapi! (FieldTypes [FieldPosition]) (
             env,
             val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
           );
-        }
-      });
+        }});
+      }
     }
   }
 };
@@ -516,7 +530,7 @@ template fromNapiB (T) {
     alias fromNapiB = getNullable!A;
   } else static if (is (T == napi_value)) {
     alias fromNapiB = napiIdentity;
-  } else static if (isCallable!T) {
+  } else static if (isDelegate!T) {
     alias fromNapiB = jsFunction;
   } else static if (is (T == JSVar)) {
     alias fromNapiB = getJSVar;
@@ -559,6 +573,7 @@ napi_status getNullable (BaseType) (
 }
 
 import std.typecons : Nullable;
+/// Gets a D typed value from a napi_value
 T fromNapi (T, string argName = ``)(napi_env env, napi_value value) {
   T toRet;
   auto erroredToJS = () => napi_throw_error (
