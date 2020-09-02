@@ -91,7 +91,7 @@ napi_value useRequire (napi_value delegate (string path) require) {
 
 struct SomeJSObj_ {
   int someIntValue;
-  int function () someIntFun;
+  int someIntFun ();
 }
 
 // We use JSObj to declare strongly typed JS objects.

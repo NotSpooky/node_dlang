@@ -229,24 +229,36 @@ struct JSObj (Template) {
     console (this.env).log (this.context);
   }
 
-  alias FieldNames = FieldNameTuple!Template;
-  alias FieldTypes = Fields!Template;
-  static assert (FieldNames.length == FieldTypes.length);
-  // Useful for type checking. 
-  enum dlangNodeIsJSObj = true;
+  alias Members = __traits (allMembers, Template);
+  alias FieldNames = Members;
+  private template type (string name) {
+    alias type = typeof (mixin (`Template.` ~ name));
+  }
+  import std.meta;
+  alias FieldTypes = staticMap! (type, Members);
   private static auto positions () {
     size_t [] funPositions;
     size_t [] fieldPositions;
-    static foreach (i; 0 .. FieldTypes.length) {
-      static if (isFunctionPointer!(FieldTypes [i])) {
-        funPositions ~= i;
-      } else {
-        fieldPositions ~= i;
+    static foreach (i, Member; Members) {
+      // Ignore opAssign, which might be implicitly generated
+      static if (Member != `opAssign`) {
+        static if (mixin (`isFunction! (Template.` ~ Member ~ `)`)) {
+          funPositions ~= i;
+        } else {
+          fieldPositions ~= i;
+        }
       }
     }
     import std.typecons : tuple;
     return tuple!(`funPositions`, `fieldPositions`) (funPositions, fieldPositions);
   }
+  
+
+
+  static assert (FieldNames.length == FieldTypes.length);
+  // Useful for type checking. 
+  enum dlangNodeIsJSObj = true;
+
   private enum Positions = positions ();
   private enum FunPositions = Positions.funPositions;
   private enum FieldPositions = Positions.fieldPositions;
@@ -371,7 +383,7 @@ struct JSObj (Template) {
 
 // Convenience console type.
 private struct Console_ {
-  void function (napi_value) log;
+  void log (napi_value);
 };
 alias Console = JSObj!Console_;
 auto console = (napi_env env) => fromNapi!Console (env, global (env, `console`));

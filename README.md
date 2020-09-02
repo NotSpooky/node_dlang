@@ -79,12 +79,12 @@ If you used MainFunction you can run your generated module.node directly:
 node module.node
 ```
 
-You can also require the module from JS:
+You can also require the module from JS.  
 Example file:
 ```javascript
 // Use relative paths if you haven't made an NPM package yet
 const mymodule = require ('./module.node');
-console.log(mymodule.foo(1, 3));
+console.log (mymodule.foo (1, 3));
 ```
 Run with
 ```shell
