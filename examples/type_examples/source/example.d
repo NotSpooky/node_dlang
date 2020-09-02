@@ -100,6 +100,22 @@ long withJSObj (SomeJSObj foo) {
   return foo.someIntFun () - foo.someIntValue;
 }
 
+// JSObjs and JSVars can be nested inside other JSObjs.
+struct Internal_ {
+  uint value1;
+  JSVar value2;
+}
+alias Internal = JSObj!Internal_;
+struct Nested_ {
+  Internal nested;
+}
+alias Nested = JSObj!Nested_;
+
+uint withNestedJSObj (Nested nestedJSObj) {
+  auto internal = nestedJSObj.nested;
+  return internal.value1 + cast (uint) internal.value2;
+}
+
 // We use JSObj to declare strongly typed JS objects.
 alias SomeJSObj = JSObj!SomeJSObj_;
 
@@ -125,6 +141,7 @@ struct VariantTypes_ {
 alias VariantTypes = JSObj!VariantTypes_;
 
 VariantTypes withVariantTypes (VariantTypes data) {
+  try {
   // To get from Algebraics, the type must be specified:
   assert (data.intStringProp!string == "Hello");
   // Undefined and nulls from JS become nulls here.
@@ -136,6 +153,11 @@ VariantTypes withVariantTypes (VariantTypes data) {
   // But this way is more verbose and internally slower.
   data.intStringProp = Algebraic! (int, string) (7);
   return data;
+  } catch (Exception ex) {
+    import std.stdio;
+    writeln (`YAMERO `, ex);
+    return data;
+  }
 }
 
 auto withJSVar (JSVar weaklyTyped) {
@@ -164,6 +186,7 @@ mixin exportToJs!(
   , returnsCallbackFP
   , returnsCallbackDg
   , withJSObj
+  , withNestedJSObj
   , reassignFun
   , withVariantTypes
   , withJSVar

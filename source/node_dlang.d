@@ -555,12 +555,6 @@ napi_status getNullable (BaseType) (
   BaseType toRetNonNull;
   auto status = fromNapiB!BaseType (env, value, &toRetNonNull);
   if (status != napi_status.napi_ok) {
-    debug {
-      import std.stdio;
-      writeln (
-        `Got status `, status, ` when trying to convert to `, Nullable!BaseType.stringof
-      );
-    }
     *toRet = Nullable!BaseType ();
   } else {
     *toRet = Nullable!BaseType (toRetNonNull);

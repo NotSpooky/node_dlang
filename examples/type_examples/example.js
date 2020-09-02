@@ -9,6 +9,7 @@ assert (nativeModule.returnsNapiValue () == 78);
 assert (nativeModule.duplicateAnInteger (60) == 120);
 
 // Other types are automatically casted:
+assert (nativeModule.invertBool (true) === false);
 assert (nativeModule.returnsInt () == 900);
 
 const res = nativeModule.returnsDouble ();
@@ -39,6 +40,9 @@ assert (nativeDg () == 20);
 // Note: On D side this object is also printed.
 assert (nativeModule.withJSObj ({ someIntValue: 45, someIntFun: () => 60 }) == 15);
 
+// Nested JSObj inside another JSObj test
+assert (nativeModule.withNestedJSObj ({ nested: { value1: 54, value2: 1 } }) == 55);
+
 // Reassignment of functions can be done with function pointer types on D
 var objWithFun = {
   someStringFun: () => "Hello"
@@ -65,8 +69,5 @@ assert (nativeModule.withJSVar (someObj) == 42);
 
 // D can also export constant values
 assert (nativeModule.dConstVal == 800);
-
-assert (nativeModule.invertBool (true) === false);
-
 
 console.log ('All tests passed!');
