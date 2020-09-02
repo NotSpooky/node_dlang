@@ -241,7 +241,7 @@ struct JSObj (Template) {
     size_t [] fieldPositions;
     static foreach (i, Member; Members) {
       // Ignore opAssign, which might be implicitly generated
-      static if (Member != `opAssign`) {
+      static if (Member != `opAssign` && !Member.startsWith (`__`)) {
         static if (mixin (`isFunction! (Template.` ~ Member ~ `)`)) {
           funPositions ~= i;
         } else {
@@ -252,8 +252,6 @@ struct JSObj (Template) {
     import std.typecons : tuple;
     return tuple!(`funPositions`, `fieldPositions`) (funPositions, fieldPositions);
   }
-  
-
 
   static assert (FieldNames.length == FieldTypes.length);
   // Useful for type checking. 
@@ -393,7 +391,7 @@ struct JSObj (Template) {
       }
     }
   }
-};
+}
 
 // Convenience console type.
 private struct Console_ {
@@ -551,20 +549,18 @@ napi_status getNullable (BaseType) (
   , napi_value value
   , Nullable!BaseType * toRet
 ) {
-  /+
   auto erroredToJS = () => napi_throw_error (
     env, null, `Failed to parse to ` ~ Nullable!BaseType.stringof
   );
-  +/
   BaseType toRetNonNull;
   auto status = fromNapiB!BaseType (env, value, &toRetNonNull);
   if (status != napi_status.napi_ok) {
-    /+debug {
+    debug {
       import std.stdio;
       writeln (
         `Got status `, status, ` when trying to convert to `, Nullable!BaseType.stringof
       );
-    }+/
+    }
     *toRet = Nullable!BaseType ();
   } else {
     *toRet = Nullable!BaseType (toRetNonNull);
@@ -789,10 +785,6 @@ private auto convertNapiSignature (F, alias toFinish)(
     assert (delegateDataPtr != null);
     auto tmp = cast (F**) delegateDataPtr;
     toFinish = **tmp;
-    /+
-    toFinish.funcptr = cast (typeof (toFinish.funcptr)) dData.funcptr;
-    toFinish.ptr = dData.ptr;
-    +/
   }
   enum toMix = q{toFinish (} ~ paramCalls ~ q{)};
   enum retsVoid = Returns! (F, void);
