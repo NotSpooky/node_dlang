@@ -122,14 +122,23 @@ alias SomeJSObj = JSObj!SomeJSObj_;
 struct WithReassignableFun_ {
   string function () someStringFun;
 }
-string newFun () { return `world`; }
 alias WithReassignableFun = JSObj!WithReassignableFun_;
+
+string newFun () { return `world`; }
 void reassignFun (WithReassignableFun toEdit) {
   // Do note that function pointers become delegates when using them
   // as they need some internal context for the conversion.
   // That behavior is transparent for the user.
   assert (toEdit.someStringFun () == `Hello`);
   toEdit.someStringFun = &newFun;
+}
+
+struct ScopedJSObjEx_ {
+  int foo;
+}
+alias ScopedType = ScopedJSObj!ScopedJSObjEx_;
+auto withScopedJSObj (ScopedType val) {
+  return val.foo + 2;
 }
 
 import std.typecons : Nullable, nullable;
@@ -187,6 +196,7 @@ mixin exportToJs!(
   , returnsCallbackDg
   , withJSObj
   , withNestedJSObj
+  , withScopedJSObj
   , reassignFun
   , withVariantTypes
   , withJSVar

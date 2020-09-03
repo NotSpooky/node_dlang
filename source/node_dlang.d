@@ -223,7 +223,19 @@ struct JSVar {
   }
 }
 
-struct JSObj (Template) {
+/// Similar to JSObj but doesn't have a reference counter, so cannot be used
+/// after the JS call that has the scope where this was created.
+/// Template is a struct type that contains fields and function declarations
+/// that this struct will attempt to copy in signature but with JS type conversions.
+/// Do note that accessing members is done lazily.
+alias ScopedJSObj (Template) = JSObj!(Template, false);
+
+/// Stores a JS value with a reference counter so that JS's GC doesn't collect
+/// it whilst it's stored in D.
+/// Template is a struct type that contains fields and function declarations
+/// that this struct will attempt to copy in signature but with JS type conversions.
+/// Do note that accessing members is done lazily.
+struct JSObj (Template, bool useRefCount = true) {
   /// Convenience console.log (this) function
   void jsLog () {
     console (this.env).log (this.context);
@@ -262,49 +274,65 @@ struct JSObj (Template) {
   private enum FieldPositions = Positions.fieldPositions;
 
   napi_env env;
-  napi_ref ctxRef = null;
+  static if (useRefCount) {
+    napi_ref ctxRef = null;
+    auto context () {
+      return val (env, this.ctxRef);
+    }
+  } else {
+    napi_value context;
+  }
 
   private enum typeMsg = `JSObj template args should be pairs of strings with types`;
-  // Creating a new object
+  // Creating a new object from D.
   this (napi_env env) {
     this.env = env;
-    auto context = new napi_value ();
-    auto status = napi_create_object (env, context);
-    assert (status == napi_status.napi_ok);
-    ctxRef = reference (env, *context);
+    static if (useRefCount) {
+      auto context = new napi_value ();
+      auto status = napi_create_object (env, context);
+      assert (status == napi_status.napi_ok);
+      ctxRef = reference (env, *context);
+    }
   }
 
   // Assigning from a JS object.
   this (napi_env env, napi_value context) {
     this.env = env;
     // Keep alive. Note this will NEVER be GC'ed
-    ctxRef = reference (env, context);
+    static if (useRefCount) {
+      ctxRef = reference (env, context);
+    } else {
+      this.context = context;
+    }
   }
   
+  // Copy ctor.
   this (ref return scope typeof (this) rhs) {
     this.env = rhs.env;
-    this.ctxRef = rhs.ctxRef;
-    if (ctxRef != null) {
-      auto status = napi_reference_ref (env, ctxRef, null);
-      //writeln (`> Ref count is `, currentRefCount);
-      assert (status == napi_status.napi_ok);
+    static if (useRefCount) {
+      this.ctxRef = rhs.ctxRef;
+      if (ctxRef != null) {
+        auto status = napi_reference_ref (env, ctxRef, null);
+        //writeln (`> Ref count is `, currentRefCount);
+        assert (status == napi_status.napi_ok);
+      }
+    } else {
+      this.context = rhs.context;
     }
   }
   ~this () {
     // writeln ("Destructing JSobj " ~ exportsAlias.stringof);
     // uint currentRefCount;
-    if (ctxRef != null) {
-      auto status = napi_reference_unref (env, ctxRef, null);
-      assert (
-        status == napi_status.napi_ok
-        , `Got status when doing unref ` ~ status.to!string
-      );
-      //writeln (`< Ref count is `, currentRefCount);
+    static if (useRefCount) {
+      if (ctxRef != null) {
+        auto status = napi_reference_unref (env, ctxRef, null);
+        assert (
+          status == napi_status.napi_ok
+          , `Got status when doing unref ` ~ status.to!string
+        );
+        //writeln (`< Ref count is `, currentRefCount);
+      }
     }
-  }
-  
-  auto context () {
-    return val (env, this.ctxRef);
   }
 
   static foreach (i, FunPosition; FunPositions) {
@@ -313,7 +341,7 @@ struct JSObj (Template) {
       q{auto } ~ FieldNames [FunPosition] ~ q{ (Parameters!(FieldTypes[FunPosition]) args) {
         alias FunType = FieldTypes [FunPosition];
         alias RetType = ReturnType!(FunType);
-          auto context = val (env, this.ctxRef);
+          //auto context = val (env, this.ctxRef);
           auto toCall = context
             .p! (RetType delegate (napi_value, Parameters!FunType))
               (env, FieldNames [FunPosition]);
@@ -336,7 +364,7 @@ struct JSObj (Template) {
             enum fieldName = FieldNames [FieldPosition];
             auto asNapi = toSet.toNapiValue (env);
             auto propName = fieldName.toStringz;
-            auto context = val (env, this.ctxRef);
+            //auto context = val (env, this.ctxRef);
             auto status = napi_set_named_property (env, context, propName, asNapi);
             assert (status == napi_status.napi_ok, `Couldn't set property ` ~ fieldName);
           }
@@ -348,7 +376,7 @@ struct JSObj (Template) {
         enum fieldName = FieldNames [FieldPosition];
         auto asNapi = toSet.toNapiValue (env);
         auto propName = fieldName.toStringz;
-        auto context = val (env, this.ctxRef);
+        //auto context = val (env, this.ctxRef);
         auto status = napi_set_named_property (env, context, propName, asNapi);
         assert (status == napi_status.napi_ok, `Couldn't set property ` ~ fieldName);
       }
@@ -362,7 +390,7 @@ struct JSObj (Template) {
         auto } ~ FieldNames [FieldPosition] ~ q{ (Type) () {
           return fromNapi!Type (
             env
-            , val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
+            , context.p (env, FieldNames [FieldPosition])
           );
         }
       });
@@ -376,16 +404,16 @@ struct JSObj (Template) {
           import std.functional : toDelegate;
           alias RetType = typeof (FieldTypes [FieldPosition].init.toDelegate);
           return fromNapi!RetType (
-            env,
-            val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
+            env
+            , context.p (env, FieldNames [FieldPosition])
           ) (args);
         }});
       } else {
         // Other types use a direct getter function.
         mixin (q{auto } ~ FieldNames [FieldPosition] ~ q{ () {
           return fromNapi! (FieldTypes [FieldPosition]) (
-            env,
-            val (env, this.ctxRef).p (env, FieldNames [FieldPosition])
+            env
+            , context.p (env, FieldNames [FieldPosition])
           );
         }});
       }

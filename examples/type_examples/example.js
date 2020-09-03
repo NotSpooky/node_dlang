@@ -50,6 +50,9 @@ var objWithFun = {
 nativeModule.reassignFun (objWithFun);
 assert (objWithFun.someStringFun () == "world");
 
+// Scoped JSObjs don't use ref counting.
+assert (nativeModule.withScopedJSObj ({foo: 4}) == 6);
+
 // Example sending algebraic typed (data can be one of several strongly typed options)
 // or potentially absent data:
 var received = nativeModule.withVariantTypes ({intStringProp: "Hello"});
