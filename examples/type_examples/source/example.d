@@ -163,8 +163,7 @@ VariantTypes withVariantTypes (VariantTypes data) {
   data.intStringProp = Algebraic! (int, string) (7);
   return data;
   } catch (Exception ex) {
-    import std.stdio;
-    writeln (`YAMERO `, ex);
+    writeln (ex);
     return data;
   }
 }
@@ -174,6 +173,15 @@ auto withJSVar (JSVar weaklyTyped) {
   // Functions are called with normal funcall syntax
   assert (cast (int) (weaklyTyped.someOtherFun ()) == 20);
   return weaklyTyped [`someProp`].someFunCall (21);
+}
+
+// You can convert objects to/from AAs.
+auto usingAAs (int [string] input) {
+  string [string] toRet;
+  foreach (key, value; input) {
+    toRet [value.to!string] = key;
+  }
+  return toRet;
 }
 
 immutable dConstVal = 800;
@@ -200,5 +208,6 @@ mixin exportToJs!(
   , reassignFun
   , withVariantTypes
   , withJSVar
+  , usingAAs
   , dConstVal
 );

@@ -70,6 +70,11 @@ var someObj = {
 };
 assert (nativeModule.withJSVar (someObj) == 42);
 
+// Objects can be converted to/from value [string] associative arrays:
+const returned = nativeModule.usingAAs ({ someProp : 3, someOtherProp : 5});
+assert (returned ['3'] == 'someProp');
+assert (returned ['5'] == 'someOtherProp');
+
 // D can also export constant values
 assert (nativeModule.dConstVal == 800);
 

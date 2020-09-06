@@ -15,25 +15,6 @@ template isVariantN (alias T) {
   enum isVariantN = __traits(isSame, TemplateOf!T, VariantN);
 }
 
-napi_status stringToNapi (StrType)(napi_env env, StrType toCast, napi_value * toRet) {
-  static if (is (StrType == string)){
-    alias NapiCharType = char;
-    alias conversionFunction = napi_create_string_utf8;
-  } else static if (is (StrType == wstring)) {
-    alias NapiCharType = ushort;
-    alias conversionFunction = napi_create_string_utf16;
-  } else static assert (
-    false
-    , `Cannot convert UTF32 strings (dstrings) to JS. Please use strings or wstrings instead`
-  );
-  return conversionFunction (
-    env
-    , cast (const NapiCharType *) toCast.ptr
-    , toCast.length
-    , toRet
-  );
-}
-
 auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
   *toRet = value;
   return napi_status.napi_ok;
@@ -528,6 +509,26 @@ auto getFloat (napi_env env, napi_value napiVal, float * toRet) {
   return status;
 }
 
+auto getAA (V)(napi_env env, napi_value napiVal, V [string] * toRet) {
+  * toRet = V [string].init;
+  napi_value propertyNames;
+  auto status = napi_get_property_names (env, napiVal, &propertyNames);
+  assert (status == napi_status.napi_ok);
+  uint propertyNamesLength;
+  status = napi_get_array_length (env, propertyNames, &propertyNamesLength);
+  assert (status == napi_status.napi_ok);
+  foreach (i; 0 .. propertyNamesLength) {
+    napi_value keyNapi;
+    status = napi_get_element (env, propertyNames, i, &keyNapi);
+    assert (status == napi_status.napi_ok);
+    napi_value element;
+    status = napi_get_property (env, napiVal, keyNapi, &element);
+    assert (status == napi_status.napi_ok);
+    (* toRet) [fromNapi!string (env, keyNapi)] = fromNapi!V (env, element);
+  }
+  return napi_status.napi_ok;
+}
+
 auto getJSVar (napi_env env, napi_value napiVal, JSVar * toRet) {
   *toRet = JSVar (env, napiVal);
   return napi_status.napi_ok;
@@ -550,6 +551,8 @@ template fromNapiB (T) {
     alias fromNapiB = napi_get_value_double;
   } else static if (is (T == float)) {
     alias fromNapiB = getFloat;
+  } else static if (is (T == V [string], V)) {
+    alias fromNapiB = getAA;
   } else static if (isSomeString!T) {
     alias fromNapiB = getStr;
   } else static if (is (T == Nullable!A, A)) {
@@ -633,11 +636,35 @@ napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
   return status;
 }
 
-napi_status jsObjToNapi (T)(napi_env env, T toConvert, napi_value * toRet) {
+napi_status aaToNapi (V)(napi_env env, V [string] toConvert, napi_value * toRet) {
   assert (toRet != null);
-  assert (env == toConvert.env);
-  *toRet =  toConvert.context;
+  auto status = napi_create_object (env, toRet);
+  assert (status == napi_status.napi_ok);
+  foreach (key, value; toConvert) {
+    status = napi_set_named_property (env, *toRet, key.toStringz, value.toNapiValue (env));
+    assert (status == napi_status.napi_ok);
+  }
   return napi_status.napi_ok;
+}
+
+napi_status stringToNapi (StrType)(napi_env env, StrType toConvert, napi_value * toRet) {
+  assert (toRet != null);
+  static if (is (StrType == string)){
+    alias NapiCharType = char;
+    alias conversionFunction = napi_create_string_utf8;
+  } else static if (is (StrType == wstring)) {
+    alias NapiCharType = ushort;
+    alias conversionFunction = napi_create_string_utf16;
+  } else static assert (
+    false
+    , `Cannot convert UTF32 strings (dstrings) to JS. Please use strings or wstrings instead`
+  );
+  return conversionFunction (
+    env
+    , cast (const NapiCharType *) toConvert.ptr
+    , toConvert.length
+    , toRet
+  );
 }
 
 napi_status nullableToNapi (T) (napi_env env, Nullable!T toConvert, napi_value * toRet) {
@@ -669,6 +696,13 @@ napi_status callableToNapi (F)(napi_env env, F toCall, napi_value * toRet) {
   assert (toRet != null);
   static assert (!isDelegate!(F), `Use delegateToNapi instead`);
   return callbackToNapi (env, &fromJsPtr!F, toRet, toCall);
+}
+
+napi_status jsObjToNapi (T)(napi_env env, T toConvert, napi_value * toRet) {
+  assert (toRet != null);
+  assert (env == toConvert.env);
+  *toRet =  toConvert.context;
+  return napi_status.napi_ok;
 }
 
 napi_status algebraicToNapi (T ...)(napi_env env, VariantN!T toConvert, napi_value * toRet) {
@@ -704,6 +738,8 @@ template toNapi (alias T) {
     alias toNapi = napi_create_uint64;
   } else static if (is (T : double)) {
     alias toNapi = napi_create_double;
+  } else static if (is (T == V [string], V)) {
+    alias toNapi = aaToNapi;
   } else static if (isSomeString!T) {
     alias toNapi = stringToNapi;
   } else static if (is (T == Nullable!A, A)) {
@@ -862,7 +898,6 @@ mixin template exportToJs (Exportables ...) {
   import js_native_api;
   import std.string : toStringz;
   import std.traits;
-  debug import std.stdio;
 
   extern (C) napi_value exportToJs (napi_env env, napi_value exports) {
     import core.runtime;
