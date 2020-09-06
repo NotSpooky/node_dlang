@@ -509,6 +509,14 @@ auto getFloat (napi_env env, napi_value napiVal, float * toRet) {
   return status;
 }
 
+void inJSScope (alias fun)(napi_env env) {
+  napi_handle_scope jsScope;
+  auto status = napi_open_handle_scope (env, &jsScope);
+  assert (status == napi_status.napi_ok);
+  scope (exit) napi_close_handle_scope (env, jsScope);
+  fun ();
+}
+
 auto getAA (V)(napi_env env, napi_value napiVal, V [string] * toRet) {
   * toRet = V [string].init;
   napi_value propertyNames;
@@ -518,19 +526,39 @@ auto getAA (V)(napi_env env, napi_value napiVal, V [string] * toRet) {
   status = napi_get_array_length (env, propertyNames, &propertyNamesLength);
   assert (status == napi_status.napi_ok);
   foreach (i; 0 .. propertyNamesLength) {
-    napi_value keyNapi;
-    status = napi_get_element (env, propertyNames, i, &keyNapi);
-    assert (status == napi_status.napi_ok);
-    napi_value element;
-    status = napi_get_property (env, napiVal, keyNapi, &element);
-    assert (status == napi_status.napi_ok);
-    (* toRet) [fromNapi!string (env, keyNapi)] = fromNapi!V (env, element);
+    inJSScope! (() {
+      napi_value keyNapi;
+      status = napi_get_element (env, propertyNames, i, &keyNapi);
+      assert (status == napi_status.napi_ok);
+      napi_value element;
+      status = napi_get_property (env, napiVal, keyNapi, &element);
+      assert (status == napi_status.napi_ok);
+      (* toRet) [fromNapi!string (env, keyNapi)] = fromNapi!V (env, element);
+    }) (env);
   }
   return napi_status.napi_ok;
 }
 
 auto getJSVar (napi_env env, napi_value napiVal, JSVar * toRet) {
   *toRet = JSVar (env, napiVal);
+  return napi_status.napi_ok;
+}
+
+auto getArray (A)(napi_env env, napi_value napiVal, A [] * toRet) {
+  import std.array;
+  Appender!(A []) toRetAppender;
+  uint arrLength;
+  auto status = napi_get_array_length (env, napiVal, &arrLength);
+  assert (status == napi_status.napi_ok);
+  foreach (i; 0 .. arrLength) {
+    inJSScope! (() {
+      napi_value toConvert;
+      status = napi_get_element (env, napiVal, i, &toConvert);
+      assert (status == napi_status.napi_ok);
+      toRetAppender ~= fromNapi!A (env, toConvert);
+    }) (env);
+  }
+  *toRet = toRetAppender.data;
   return napi_status.napi_ok;
 }
 
@@ -563,6 +591,8 @@ template fromNapiB (T) {
     alias fromNapiB = jsFunction;
   } else static if (is (T == JSVar)) {
     alias fromNapiB = getJSVar;
+  } else static if (is (T == A[], A)) {
+    alias fromNapiB = getArray;
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
     alias fromNapiB = getJSobj;
   } else static if (isVariantN!T) {
@@ -620,18 +650,15 @@ napi_status boolToNapi (napi_env env, bool toConvert, napi_value * toRet) {
 }
 
 napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
-  napi_status status = napi_status.napi_generic_failure;
   assert (toRet != null);
-  status = napi_create_array_with_length (env, array.length, toRet);
-  if (status != napi_status.napi_ok) {
-    return status;
-  }
+  auto status = napi_create_array_with_length (env, array.length, toRet);
+  assert (status == napi_status.napi_ok);
   foreach (i, val; array) {
-    // Create a napi_value for 'hello'
-    auto nv = val.toNapiValue (env);
-
-    status = napi_set_element (env, *toRet, i.to!uint, nv);
-    if (status != napi_status.napi_ok) return status;
+    inJSScope! (() {
+      auto nv = val.toNapiValue (env);
+      status = napi_set_element (env, *toRet, i.to!uint, nv);
+      assert (status == napi_status.napi_ok);
+    }) (env);
   }
   return status;
 }
@@ -641,8 +668,10 @@ napi_status aaToNapi (V)(napi_env env, V [string] toConvert, napi_value * toRet)
   auto status = napi_create_object (env, toRet);
   assert (status == napi_status.napi_ok);
   foreach (key, value; toConvert) {
-    status = napi_set_named_property (env, *toRet, key.toStringz, value.toNapiValue (env));
-    assert (status == napi_status.napi_ok);
+    inJSScope! (() {
+      status = napi_set_named_property (env, *toRet, key.toStringz, value.toNapiValue (env));
+      assert (status == napi_status.napi_ok);
+    }) (env);
   }
   return napi_status.napi_ok;
 }

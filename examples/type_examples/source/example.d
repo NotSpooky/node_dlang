@@ -49,6 +49,12 @@ wstring concatText (string firstText, wstring secondText) {
   return firstText.to!wstring ~ '\n' ~ secondText;
 }
 
+auto duplicateArray (int [] toDuplicate) {
+  import std.algorithm;
+  import std.array;
+  return toDuplicate.map!`a * 2`.array;
+}
+
 // You can receive callbacks with delegates.
 auto receivesCallback (int delegate () getSomeInt) {
   int calledFromJS = getSomeInt ();
@@ -195,6 +201,7 @@ mixin exportToJs!(
   , invertBool
   , duplicateAnInteger
   , concatText
+  , duplicateArray
   , useRequire
   , returnsInt
   , returnsDouble
