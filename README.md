@@ -1,12 +1,27 @@
 ![Actions CI](https://github.com/NotSpooky/node_dlang/workflows/Type%20example%20test/badge.svg?branch=master)
 ![License](https://img.shields.io/badge/license-MIT-9cf)
 # Node dlang
-### **Note: This is currently in early state of development, expect breaking changes!**
 Package to create native NodeJS modules based on [N-API](https://nodejs.org/api/n-api.html "N-API").
 Tested on 64 bit Linux and Windows with LDC and DMD compilers.
 
+# Features
+## Implemented
+Conversion between Javascript types and D's bool, int, float, double, string, wstring, arrays, V \[string\], JSObj (statically described), JSVar, functions, function pointers, pointers to delegates, algebraics, nullables.
+
+The raw N-API can also be used and there's automatic conversions of napi_values.
+
+Ability to create JS scopes (inJSScope function).
+
+Ability to execute functions on module load (with MainFunction).
+
+## Coming soon
+Ability to select between Javascipt's ArrayBuffer and Array when dealing with arrays.
+
+Eager conversion to/from POD structs (lazy conversion is already available with JSObj and JSVar).
+
 # Requirements
 Just a D compiler and DUB package manager (usually included with the compiler).
+
 JavaScript is not necessary to generate the modules but NodeJS is needed to test the generated file.
 # Usage
 Create a DUB project with:
