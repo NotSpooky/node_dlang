@@ -562,6 +562,16 @@ auto getArray (A)(napi_env env, napi_value napiVal, A [] * toRet) {
   return napi_status.napi_ok;
 }
 
+auto getStruct (S)(napi_env env, napi_value napiVal, S * toRet) {
+  *toRet = S.init;
+  foreach (fieldName; FieldNameTuple!S) {
+    alias FieldType = typeof (__traits (getMember, *toRet, fieldName));
+    auto napiProp = napiVal.p (env, fieldName);
+    __traits (getMember, *toRet, fieldName) = fromNapi!FieldType (env, napiProp);
+  }
+  return napi_status.napi_ok;
+}
+
 template fromNapiB (T) {
   static if (is (T == bool)) {
     alias fromNapiB = napi_get_value_bool;
@@ -595,13 +605,15 @@ template fromNapiB (T) {
     alias fromNapiB = getArray;
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
     alias fromNapiB = getJSobj;
+  } else static if (__traits(isPOD, T)) {
+    alias fromNapiB = getStruct;
   } else static if (isVariantN!T) {
     static assert (
       0
       , `Don't use fromNapiB to get a VariantN/Algebraic, get the expected type instead`
     );
   } else {
-    static assert (0, `Not implemented: Convertion from JS type for ` ~ T.stringof);
+    static assert (0, `Not implemented: Conversion from JS type for ` ~ T.stringof);
   }
 }
 
@@ -736,6 +748,7 @@ napi_status jsObjToNapi (T)(napi_env env, T toConvert, napi_value * toRet) {
 
 napi_status algebraicToNapi (T ...)(napi_env env, VariantN!T toConvert, napi_value * toRet) {
   static assert (T.length > 1);
+  assert (toRet != null);
   foreach (possibleType; T [1..$]) {
     auto valueTried = toConvert.peek!possibleType;
     if (valueTried != null) {
@@ -747,8 +760,18 @@ napi_status algebraicToNapi (T ...)(napi_env env, VariantN!T toConvert, napi_val
 }
 
 napi_status jsVarToNapi (napi_env env, JSVar toConvert, napi_value * toRet) {
+  assert (toRet != null);
   assert (env == toConvert.env, `JS environments don't match`);
   *toRet = toConvert.context ();
+  return napi_status.napi_ok;
+}
+
+napi_status structToNapi (S)(napi_env env, const ref S toConvert, napi_value * toRet) {
+  assert (toRet != null);
+  napi_create_object (env, toRet);
+  foreach (fieldName; FieldNameTuple!S) {
+    (*toRet).p (env, fieldName, __traits (getMember, toConvert, fieldName));
+  }
   return napi_status.napi_ok;
 }
 
@@ -799,6 +822,8 @@ template toNapi (alias T) {
     alias toNapi = jsObjToNapi;
   } else static if (isVariantN!T) {
     alias toNapi = algebraicToNapi;
+  } else static if (__traits (isPOD, T)) {
+    alias toNapi = structToNapi;
   } else {
     static assert (0, `Not implemented: Conversion to JS type for ` ~ T.stringof);
   }
@@ -897,7 +922,6 @@ extern (C) napi_value withNapiExpectedSignature (alias Function)(
 }
 
 template Returns (alias Function, OtherType) {
-  import std.traits : ReturnType;
   enum Returns = is (ReturnType!Function == OtherType);
 }
 

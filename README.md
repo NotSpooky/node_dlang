@@ -8,11 +8,11 @@ Tested on 64 bit Linux and Windows with LDC and DMD compilers.
 ## Implemented
 Conversion between Javascript types and D's bool, int, float, double, string, wstring, arrays, V \[string\], JSObj (statically described), JSVar, functions, function pointers, pointers to delegates, algebraics, nullables.
 
-The raw N-API can also be used and there's automatic conversions of napi_values.
+The raw N-API can also be used and there's automatic conversions for napi\_values.
 
-Ability to create JS scopes (inJSScope function).
+Ability to create JS scopes with inJSScope function.
 
-Ability to execute functions on module load (with MainFunction).
+Ability to execute functions on module load with MainFunction template.
 
 ## Coming soon
 Ability to select between Javascipt's ArrayBuffer and Array when dealing with arrays.

@@ -39,7 +39,13 @@ assert (nativeFP (5) == 8);
 var nativeDg = nativeModule.returnsCallbackDg (4);
 assert (nativeDg () == 20);
 
-// Example sending strongly typed data (JSObj):
+// Example sending strongly typed data:
+// Plain old data structs are eagerly converted
+var withStr = nativeModule.withStruct ({ someNum: 40, subStruct: { someText: '2' } });
+assert (withStr.someNum == 20);
+assert (withStr.subStruct.someText == '2hey');
+
+// JSObjs are lazily converted and can have functions
 // Note: On D side this object is also printed.
 assert (nativeModule.withJSObj ({ someIntValue: 45, someIntFun: () => 60 }) == 15);
 
