@@ -106,6 +106,24 @@ long withJSObj (SomeJSObj foo) {
   return foo.someIntFun () - foo.someIntValue;
 }
 
+struct SubStruct {
+  wstring someText;
+}
+struct EagerlyConverted {
+  uint someNum;
+  SubStruct subStruct;
+}
+
+// Note, as this is eagerly evaluated, it's not recommended to receive structs
+// with lots of fields if you are only going to use a few of them.
+// In that case it's better to receive a JSObj.
+auto withStruct (EagerlyConverted val) {
+  return EagerlyConverted (
+    (val.someNum / 2)
+    , SubStruct (val.subStruct.someText ~ `hey`)
+  );
+}
+
 // JSObjs and JSVars can be nested inside other JSObjs.
 struct Internal_ {
   uint value1;
@@ -210,6 +228,7 @@ mixin exportToJs!(
   , returnsCallbackFP
   , returnsCallbackDg
   , withJSObj
+  , withStruct
   , withNestedJSObj
   , withScopedJSObj
   , reassignFun
