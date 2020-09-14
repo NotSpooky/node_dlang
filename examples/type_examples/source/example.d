@@ -208,6 +208,21 @@ auto usingAAs (int [string] input) {
   return toRet;
 }
 
+struct SomeJSClass_ {
+  int someVal;
+  // Constructors are declared with void return type but actually return a
+  // JSObj of this struct.
+  void constructor (int someVal);
+}
+alias SomeJSClass = JSObj!SomeJSClass_;
+
+auto withConstructor (SomeJSClass asJSObj, JSVar asJSVar) {
+  auto objInstance = asJSObj.constructor (2);
+  auto varInstance = asJSVar.constructor (2);
+  assert (objInstance.someVal == 2);
+  return varInstance;
+}
+
 immutable dConstVal = 800;
 
 // This mixin is needed to register the functions for JS usage
@@ -235,5 +250,6 @@ mixin exportToJs!(
   , withVariantTypes
   , withJSVar
   , usingAAs
+  , withConstructor
   , dConstVal
 );

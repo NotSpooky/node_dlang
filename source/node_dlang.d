@@ -23,6 +23,28 @@ auto napiIdentity (napi_env _1, napi_value value, napi_value * toRet) {
 alias ExternD (T) = SetFunctionAttributes!(T, "D", functionAttributes!T);
 alias ExternC (T) = SetFunctionAttributes!(T, "C", functionAttributes!T);
 
+auto toNapiValueArray (T ...)(napi_env env, T args) {
+  napi_value [args.length] argVals;
+  foreach (i, arg; args) {
+    // Create a temporary value with the casted data.
+    argVals [i] = arg.toNapiValue (env);
+  }
+  return argVals;
+}
+
+auto constructor (RetType, T ...)(napi_env env, napi_value constructorNapi, T args) {
+  const asArr = toNapiValueArray (env, args);
+  napi_value toRet;
+  auto status = napi_new_instance (
+    env
+    , constructorNapi
+    , asArr.length
+    , asArr.ptr
+    , &toRet
+  );
+  assert (status == napi_status.napi_ok);
+  return fromNapi!RetType (env, toRet);
+}
 
 // If the first argument to the delegate (in other words, R) is a napi_value
 // that is used as the context.
@@ -43,10 +65,12 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
       assert (status == napi_status.napi_ok);
       enum firstArgPos = 0;
     }
-    napi_value [args.length - firstArgPos] napiArgs;
+    /+napi_value [args.length - firstArgPos] napiArgs;
+    
     foreach (i, arg; args [firstArgPos..$]) {
       napiArgs [i] = arg.toNapiValue (env);
-    }
+    }+/
+    auto napiArgs = toNapiValueArray (env, args [firstArgPos .. $]);
     napi_value returned;
     status = napi_call_function (
       env
@@ -160,6 +184,10 @@ struct JSVar {
       // TODO: Check cases such as functions which might be problematic.
       this.ctxRef = NapiValWithId (nVal);
     }
+  }
+
+  auto constructor (RetType = JSVar, T ...)(T args) {
+    return .constructor!RetType (this.env, this.context (), args);
   }
 
   auto context () {
@@ -317,23 +345,36 @@ struct JSObj (Template, bool useRefCount = true) {
   }
 
   static foreach (i, FunPosition; FunPositions) {
-    // Add function that simply uses callNapi.
-    mixin (
-      q{auto } ~ FieldNames [FunPosition] ~ q{ (Parameters!(FieldTypes[FunPosition]) args) {
-        alias FunType = FieldTypes [FunPosition];
-        alias RetType = ReturnType!(FunType);
-          //auto context = val (env, this.ctxRef);
-          auto toCall = context
-            .p! (RetType delegate (napi_value, Parameters!FunType))
-              (env, FieldNames [FunPosition]);
-          static if (is (RetType == void)) {
-            toCall (context, args);
-          } else {
-            return toCall (context, args);
+    // Functions called constructor are equivalent to using new in JS.
+    static if (FieldNames [FunPosition] == `constructor`) {
+      pragma (msg, `Found constructor`);
+      static assert (
+        is (ReturnType! (FieldTypes [FunPosition]) == void)
+        , `Please put void return type on JS constructor declarations, found `
+          ~ ReturnType! (FieldTypes [FunPosition]).stringof
+      );
+      auto constructor (Parameters! (FieldTypes [FunPosition]) args) {
+        return .constructor!(typeof (this)) (this.env, this.context (), args);
+      }
+    } else {
+      // Add function that simply uses callNapi.
+      mixin (
+        q{auto } ~ FieldNames [FunPosition] ~ q{ (Parameters! (FieldTypes [FunPosition]) args) {
+          alias FunType = FieldTypes [FunPosition];
+          alias RetType = ReturnType!(FunType);
+            //auto context = val (env, this.ctxRef);
+            auto toCall = context
+              .p! (RetType delegate (napi_value, Parameters!FunType))
+                (env, FieldNames [FunPosition]);
+            static if (is (RetType == void)) {
+              toCall (context, args);
+            } else {
+              return toCall (context, args);
+            }
           }
         }
-      }
-    );
+      );
+    }
   }
   static foreach (i, FieldPosition; FieldPositions) {
     // Setter.
@@ -407,7 +448,7 @@ private struct Console_ {
   void log (napi_value);
 };
 alias Console = JSObj!Console_;
-auto console = (napi_env env) => fromNapi!Console (env, global (env, `console`));
+auto console = (napi_env env) => global!Console (env, `console`);
 void jsLog (T)(napi_env env, T toLog) {
   console (env).log (toLog.toNapiValue (env));
 }
@@ -417,25 +458,9 @@ auto global (napi_env env) {
   assert (status == napi_status.napi_ok, `Couldn't get global context`);
   return val;
 }
-auto global (napi_env env, string name) {
-  return global (env).p (env, name);
-}
-auto global (RetType)(napi_env env, string name) {
-  return fromNapi!RetType (env, global (env, name));
-}
 
-/// Note: Only available if the module's globals have 'require' which is not usually
-/// the case
-auto requireJs (RetType = napi_value) (napi_env env, string id) {
-  try {
-    return fromNapi!(RetType delegate (string)) (env, global (env, `require`)) (id);
-  } catch (Exception ex) {
-    debug stderr.writeln (
-      `Errored on require, probably the globals object doesn't contain require.`
-      , "\nConsider sending the loaded module data from JS"
-    );
-    throw (ex);
-  }
+auto global (RetType = JSVar)(napi_env env, string name) {
+  return fromNapi!RetType (env, global (env).p (env, name));
 }
 
 auto getJSobj (T)(napi_env env, napi_value ctx, T * toRet) {
@@ -603,15 +628,21 @@ template fromNapiB (T) {
     alias fromNapiB = getJSVar;
   } else static if (is (T == A[], A)) {
     alias fromNapiB = getArray;
+  } else static if (isFunctionPointer!T) {
+    // Need context to perform JS calls.
+    static assert (
+      0
+      , `Cannot receive function pointers, use delegates instead`
+    );
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
     alias fromNapiB = getJSobj;
-  } else static if (__traits(isPOD, T)) {
-    alias fromNapiB = getStruct;
   } else static if (isVariantN!T) {
     static assert (
       0
       , `Don't use fromNapiB to get a VariantN/Algebraic, get the expected type instead`
     );
+  } else static if (__traits(isPOD, T)) {
+    alias fromNapiB = getStruct;
   } else {
     static assert (0, `Not implemented: Conversion from JS type for ` ~ T.stringof);
   }
@@ -766,7 +797,16 @@ napi_status jsVarToNapi (napi_env env, JSVar toConvert, napi_value * toRet) {
   return napi_status.napi_ok;
 }
 
-napi_status structToNapi (S)(napi_env env, const ref S toConvert, napi_value * toRet) {
+napi_status tupleToNapi (T)(napi_env env, const auto ref T toConvert, napi_value * toRet) {
+  assert (toRet != null);
+  napi_create_object (env, toRet);
+  foreach (i, field; toConvert.expand) {
+    (*toRet).p (env, toConvert.fieldNames [i], field);
+  }
+  return napi_status.napi_ok;
+}
+
+napi_status structToNapi (S)(napi_env env, const auto ref S toConvert, napi_value * toRet) {
   assert (toRet != null);
   napi_create_object (env, toRet);
   foreach (fieldName; FieldNameTuple!S) {
@@ -776,6 +816,7 @@ napi_status structToNapi (S)(napi_env env, const ref S toConvert, napi_value * t
 }
 
 template toNapi (alias T) {
+  import std.typecons : Tuple;
   static if (is (T == bool)) {
     alias toNapi = boolToNapi;
   } static if (is (T == double)) {
@@ -822,6 +863,8 @@ template toNapi (alias T) {
     alias toNapi = jsObjToNapi;
   } else static if (isVariantN!T) {
     alias toNapi = algebraicToNapi;
+  } else static if (__traits (isSame, TemplateOf!T, Tuple)) {
+    alias toNapi = tupleToNapi;
   } else static if (__traits (isPOD, T)) {
     alias toNapi = structToNapi;
   } else {

@@ -79,6 +79,16 @@ var someObj = {
 };
 assert (nativeModule.withJSVar (someObj) == 42);
 
+// Classes use the new keyword in JS. In D, just declare and call a void
+// function called constructor (in JSObjs) or just call constructor on a JSVar.
+// Example of both here.
+class SomeClass {
+  constructor (someVal) {
+    this.someVal = someVal;
+  }
+}
+assert (nativeModule.withConstructor (SomeClass, SomeClass).someVal == 2);
+
 // Objects can be converted to/from value [string] associative arrays:
 const returned = nativeModule.usingAAs ({ someProp : 3, someOtherProp : 5});
 assert (returned ['3'] == 'someProp');
