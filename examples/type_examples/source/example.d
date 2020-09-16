@@ -224,7 +224,7 @@ auto withConstructor (SomeJSClass asJSObj, JSVar asJSVar) {
 }
 
 auto makePromise (napi_env env) {
-  auto toRet =  Promise (env);
+  auto toRet = Promise (env);
   toRet.resolve (200);
   return toRet;
 }

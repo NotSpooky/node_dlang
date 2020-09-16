@@ -93,6 +93,15 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
   return napi_status.napi_ok;
 }
 
+auto getDgPointer (FP)(napi_env env, napi_value func, FP * toRet) {
+  static if (is (FP == F*, F)) {
+    auto intermediatePtr = new F [1].ptr;
+    jsFunction (env, func, intermediatePtr);
+    *toRet = intermediatePtr;
+  } else static assert (0);
+  return napi_status.napi_ok;
+}
+
 auto reference (napi_env env, napi_value obj) {
   napi_ref toRet;
   auto status = napi_create_reference (env, obj, 1, &toRet);
@@ -654,6 +663,8 @@ template fromNapiB (T) {
     alias fromNapiB = getJSVar;
   } else static if (is (T == A[], A)) {
     alias fromNapiB = getArray;
+  } else static if (is (T == A*, A) && isDelegate!A) {
+    alias fromNapiB = getDgPointer;
   } else static if (isFunctionPointer!T) {
     // Need context to perform JS calls.
     static assert (
