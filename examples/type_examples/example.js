@@ -94,6 +94,11 @@ const returned = nativeModule.usingAAs ({ someProp : 3, someOtherProp : 5});
 assert (returned ['3'] == 'someProp');
 assert (returned ['5'] == 'someOtherProp');
 
+// Promises created in JS don't need any special handling, just call the then and
+// catch functions.
+// Promises in D are created with the Promise struct.
+nativeModule.makePromise ().then (a => assert (a == 200)).catch (a => assert (false));
+
 // D can also export constant values
 assert (nativeModule.dConstVal == 800);
 

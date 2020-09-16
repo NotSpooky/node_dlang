@@ -223,6 +223,12 @@ auto withConstructor (SomeJSClass asJSObj, JSVar asJSVar) {
   return varInstance;
 }
 
+auto makePromise (napi_env env) {
+  auto toRet =  Promise (env);
+  toRet.resolve (200);
+  return toRet;
+}
+
 immutable dConstVal = 800;
 
 // This mixin is needed to register the functions for JS usage
@@ -251,5 +257,6 @@ mixin exportToJs!(
   , withJSVar
   , usingAAs
   , withConstructor
+  , makePromise
   , dConstVal
 );

@@ -232,6 +232,32 @@ struct JSVar {
   }
 }
 
+struct Promise {
+  @disable this ();
+  napi_deferred deferred;
+  JSVar promise;
+  napi_env env;
+  this (napi_env env) {
+    this.env = env;
+    napi_value napiPromise;
+    auto status = napi_create_promise (env, &deferred, &napiPromise);
+    promise = JSVar (env, napiPromise);
+    assert (status == napi_status.napi_ok);
+  }
+  void resolve (T)(T toRet) {
+    auto status = napi_resolve_deferred (env, deferred, toRet.toNapiValue (env));
+    assert (status == napi_status.napi_ok);
+  }
+  void reject (T)(T toRet) {
+    auto status = napi_reject_deferred (env, deferred, toRet.toNapiValue (env));
+    assert (status == napi_status.napi_ok);
+  }
+  napi_value toNapiValue (napi_env env) {
+    assert (env == this.env);
+    return this.promise.context ();
+  }
+}
+
 /// Similar to JSObj but doesn't have a reference counter, so cannot be used
 /// after the JS call that has the scope where this was created.
 /// Template is a struct type that contains fields and function declarations
