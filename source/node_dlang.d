@@ -232,8 +232,13 @@ struct JSVar {
     }
   }
 
+  // Convenience console.log function
   auto jsLog () {
     console (this.env).log (this.context ());
+  }
+
+  bool isUndefined () {
+    return .isUndefined (this.env, this.context ());
   }
 
   auto opCast (T) () {
@@ -926,6 +931,12 @@ napi_value undefined (napi_env env) {
     env.throwInJS (`Unable to return void (undefined in JS)`);
   }
   return toRet;
+}
+
+bool isUndefined (napi_env env, napi_value val) {
+  napi_valuetype valueType;
+  assert (napi_typeof (env, val, &valueType) == napi_status.napi_ok);
+  return valueType == napi_valuetype.napi_undefined;
 }
 
 private auto convertNapiSignature (F, alias toFinish)(
