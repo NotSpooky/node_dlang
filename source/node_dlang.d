@@ -95,14 +95,19 @@ auto jsFunction (R)(napi_env env, napi_value func, R * toRet) {
 
 auto getDgPointer (FP)(napi_env env, napi_value func, FP * toRet) {
   static if (is (FP == F*, F)) {
+    import std.conv : emplace;
+    char [F.sizeof] buf;
+    /+
+    auto c = emplace!C(buf, 5);
     auto intermediatePtr = new F [1].ptr;
     jsFunction (env, func, intermediatePtr);
     *toRet = intermediatePtr;
+    +/
   } else static assert (0);
   return napi_status.napi_ok;
 }
 
-auto reference (napi_env env, napi_value obj) {
+auto reference (napi_env env, ref napi_value obj) {
   napi_ref toRet;
   auto status = napi_create_reference (env, obj, 1, &toRet);
   if (status != napi_status.napi_ok) throw new Exception (
@@ -290,6 +295,17 @@ struct JSObj (Template, bool useRefCount = true) {
     console (this.env).log (this.context);
   }
 
+  void toString (scope void delegate (const (char)[]) sink) {
+    if (env is null || this.context is null) {
+      sink (`null JSObj`);
+    } else {
+      // Note: this could generate an error 
+      napi_value asStr;
+      napi_coerce_to_string (env, this.context, &asStr);
+      sink (fromNapi!string (env, asStr));
+    }
+  }
+
   alias Members = __traits (allMembers, Template);
   alias FieldNames = Members;
   private template type (string name) {
@@ -337,10 +353,10 @@ struct JSObj (Template, bool useRefCount = true) {
   this (napi_env env) {
     this.env = env;
     static if (useRefCount) {
-      auto context = new napi_value ();
-      auto status = napi_create_object (env, context);
+      auto context = napi_value ();
+      auto status = napi_create_object (env, &context);
       assert (status == napi_status.napi_ok);
-      ctxRef = reference (env, *context);
+      ctxRef = reference (env, context);
     }
   }
 
@@ -803,7 +819,7 @@ napi_status callbackToNapi (F)(
 napi_status delegateToNapi (Dg)(napi_env env, Dg * toCall, napi_value * toRet) {
   assert (toRet != null);
   static assert (isDelegate!(Dg));
-  return callbackToNapi (env, &fromJsPtr!(Dg), toRet, toCall);
+  return callbackToNapi (env, &fromJsPtr! (Dg), toRet, toCall);
 }
 
 napi_status callableToNapi (F)(napi_env env, F toCall, napi_value * toRet) {
@@ -1002,7 +1018,7 @@ private auto convertNapiSignature (F, alias toFinish)(
 extern (C) napi_value fromJsPtr (F)(napi_env env, napi_callback_info info) {
   // It's a function pointer type, so must allocate it.
   F toCall;
-  return convertNapiSignature!(F, toCall) (env, info, cast (void **) & toCall);
+  return convertNapiSignature! (F, toCall) (env, info, cast (void **) & toCall);
 }
 
 extern (C) napi_value withNapiExpectedSignature (alias Function)(
