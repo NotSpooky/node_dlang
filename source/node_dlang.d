@@ -227,7 +227,7 @@ struct JSVar {
   template opDispatch (string s) {
     R opDispatch (R = JSVar, T...)(T args) {
       auto ctx = this.context ();
-      auto toCallAsNapi = ctx.p(env, s);
+      auto toCallAsNapi = ctx.p (env, s);
       auto asCallable = fromNapi! (R delegate (napi_value, T))(env, toCallAsNapi);
       static if (is (R == void)) {
         asCallable (ctx, args);
@@ -248,6 +248,12 @@ struct JSVar {
 
   auto opCast (T) () {
     return fromNapi!T (env, this.context ());
+  }
+
+  auto opCall (R = JSVar, T ...) (T args) {
+    auto ctx = this.context ();
+    auto toCall = fromNapi! (R delegate (napi_value, T)) (env, ctx);
+    return toCall (ctx, args);
   }
 }
 
@@ -1069,7 +1075,7 @@ mixin template exportToJs (Exportables ...) {
         env
         , null
         , 0
-        , &withNapiExpectedSignature!Exportable
+        , & withNapiExpectedSignature!Exportable
         , null
         , &fn
       );
