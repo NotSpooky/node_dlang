@@ -631,6 +631,16 @@ auto getJSVar (napi_env env, napi_value napiVal, JSVar * toRet) {
   return napi_status.napi_ok;
 }
 
+auto getStaticArray (A)(napi_env env, napi_value napiVal, A * toRet) {
+  // Copying could be avoided
+  auto asDynamicArr = (* toRet) [];
+  auto toRetNapi = getArray (env, napiVal, & asDynamicArr);
+  foreach (i, val; asDynamicArr) {
+    (* toRet) [i] = val;
+  }
+  return toRetNapi;
+}
+
 auto getArray (A)(napi_env env, napi_value napiVal, A [] * toRet) {
   import std.array;
   Appender!(A []) toRetAppender;
@@ -688,6 +698,8 @@ template fromNapiB (T) {
     alias fromNapiB = jsFunction;
   } else static if (is (T == JSVar)) {
     alias fromNapiB = getJSVar;
+  } else static if (isStaticArray!T) {
+    alias fromNapiB = getStaticArray;
   } else static if (is (T == A[], A)) {
     alias fromNapiB = getArray;
   } else static if (is (T == A*, A) && isDelegate!A) {
