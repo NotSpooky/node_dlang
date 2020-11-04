@@ -199,6 +199,9 @@ struct JSVar {
       this.ctxRef = NapiValWithId (nVal);
     }
   }
+  this (T) (napi_env env, T val) {
+    this (env, val.toNapiValue (env));
+  }
 
   auto constructor (RetType = JSVar, T ...)(T args) {
     return .constructor!RetType (this.env, this.context (), args);
