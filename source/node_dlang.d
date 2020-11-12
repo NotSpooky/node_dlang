@@ -936,6 +936,8 @@ template toNapi (alias T) {
       static assert (0, `Please use extern (C) for napi callbacks`);
     }
     alias toNapi = callbackToNapi;
+  } else static if (isStaticArray!T) {
+    alias toNapi = arrayToNapi;
   } else static if (is (T == A[], A)) {
     alias toNapi = arrayToNapi;
   } else static if (__traits(hasMember, T, `dlangNodeIsJSObj`)) {
