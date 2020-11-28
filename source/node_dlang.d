@@ -158,7 +158,8 @@ auto callNapi (Args ...)(napi_env env, napi_value context, napi_value func, Args
 }
 
 // Get a property.
-auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
+auto p (RetType = napi_value, S) (napi_value obj, napi_env env, S propName) 
+if (isSomeString!S) {
   napi_value toRet;
   auto key = propName.toNapiValue (env);
   auto status = napi_get_property (env, obj, key, &toRet);
@@ -168,11 +169,12 @@ auto p (RetType = napi_value) (napi_value obj, napi_env env, string propName) {
   return fromNapi!RetType (env, toRet);
 }
 // Assign a property.
-void p (InType) (napi_value obj, napi_env env, string propName, InType newVal) {
+void p (InType, S) (napi_value obj, napi_env env, S propName, InType newVal)
+if (isSomeString!S) {
   auto key = propName.toNapiValue (env);
   auto status = napi_set_property (env, obj, key, newVal.toNapiValue (env));
   if (status != napi_status.napi_ok) {
-    throw new Exception (`Failed to set property ` ~ propName);
+    throw new Exception (`Failed to set property ` ~ propName.to!string);
   }
 }
 
@@ -219,11 +221,11 @@ struct JSVar {
     return this.context ();
   }
 
-  auto opIndex (string propName) {
+  auto opIndex (S)(S propName) if (isSomeString!S) {
     return context.p!JSVar (env, propName);
   }
 
-  auto opIndexAssign (T)(T toAssign, string propName) {
+  auto opIndexAssign (T, S)(T toAssign, S propName) if (isSomeString!S) {
     context ().p (env, propName, toAssign);
   }
 
@@ -649,12 +651,16 @@ auto getArray (A)(napi_env env, napi_value napiVal, A [] * toRet) {
   Appender!(A []) toRetAppender;
   uint arrLength;
   auto status = napi_get_array_length (env, napiVal, &arrLength);
-  assert (status == napi_status.napi_ok);
+  assert (
+    status == napi_status.napi_ok
+    , `Error getting array length, maybe object isn't array or N-API errored on`
+      ~ ` the call before this one.`
+  );
   foreach (i; 0 .. arrLength) {
     inJSScope! (() {
       napi_value toConvert;
       status = napi_get_element (env, napiVal, i, &toConvert);
-      assert (status == napi_status.napi_ok);
+      assert (status == napi_status.napi_ok, `Couldn't get element from array`);
       toRetAppender ~= fromNapi!A (env, toConvert);
     }) (env);
   }
