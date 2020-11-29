@@ -295,6 +295,7 @@ struct Promise {
 /// Do note that accessing members is done lazily.
 alias ScopedJSObj (Template) = JSObj!(Template, false);
 
+struct Named { string name; };
 /// Stores a JS value with a reference counter so that JS's GC doesn't collect
 /// it whilst it's stored in D.
 /// Template is a struct type that contains fields and function declarations
@@ -317,17 +318,27 @@ struct JSObj (Template, bool useRefCount = true) {
     }
   }
 
-  alias Members = __traits (allMembers, Template);
-  alias FieldNames = Members;
+  alias FieldNames = __traits (allMembers, Template);
+  private template nameForCaller (string name) {
+    alias nameUDAs = getUDAs! (mixin (`Template.` ~ name), Named);
+    static if (nameUDAs.length == 0) {
+      alias nameForCaller = name;
+    } else {
+      static assert (nameUDAs.length == 1, `Cannot have more than one Named UDA`);
+      enum nameForCaller = nameUDAs [0].name;
+    }
+  }
+  import std.meta;
+  // Equals to FieldNames unless the @named uda is used.
+  alias NamesForCaller = staticMap! (nameForCaller, FieldNames);
   private template type (string name) {
     alias type = typeof (mixin (`Template.` ~ name));
   }
-  import std.meta;
-  alias FieldTypes = staticMap! (type, Members);
+  alias FieldTypes = staticMap! (type, FieldNames);
   private static auto positions () {
     size_t [] funPositions;
     size_t [] fieldPositions;
-    static foreach (i, Member; Members) {
+    static foreach (i, Member; FieldNames) {
       // Ignore opAssign, which might be implicitly generated
       static if (Member != `opAssign` && !Member.startsWith (`__`)) {
         static if (mixin (`isFunction! (Template.` ~ Member ~ `)`)) {
@@ -341,7 +352,7 @@ struct JSObj (Template, bool useRefCount = true) {
     return tuple!(`funPositions`, `fieldPositions`) (funPositions, fieldPositions);
   }
 
-  static assert (FieldNames.length == FieldTypes.length);
+  static assert (NamesForCaller.length == FieldTypes.length);
   // Useful for type checking. 
   enum dlangNodeIsJSObj = true;
 
@@ -426,13 +437,13 @@ struct JSObj (Template, bool useRefCount = true) {
     } else {
       // Add function that simply uses callNapi.
       mixin (
-        q{auto } ~ FieldNames [FunPosition] ~ q{ (Parameters! (FieldTypes [FunPosition]) args) {
+        q{auto } ~ NamesForCaller [FunPosition] ~ q{ (Parameters! (FieldTypes [FunPosition]) args) {
           alias FunType = FieldTypes [FunPosition];
           alias RetType = ReturnType!(FunType);
             //auto context = val (env, this.ctxRef);
             auto toCall = context
               .p! (RetType delegate (napi_value, Parameters!FunType))
-                (env, FieldNames [FunPosition]);
+                (env, NamesForCaller [FunPosition]);
             static if (is (RetType == void)) {
               toCall (context, args);
             } else {
@@ -449,8 +460,8 @@ struct JSObj (Template, bool useRefCount = true) {
       // Also add implicit conversions :)
       static foreach (PossibleType; TemplateArgsOf!(FieldTypes [FieldPosition])[1..$]) {
         mixin (q{
-          void } ~ FieldNames [FieldPosition] ~ q{ (PossibleType toSet) {
-            enum fieldName = FieldNames [FieldPosition];
+          void } ~ NamesForCaller [FieldPosition] ~ q{ (PossibleType toSet) {
+            enum fieldName = NamesForCaller [FieldPosition];
             auto asNapi = toSet.toNapiValue (env);
             auto propName = fieldName.toStringz;
             //auto context = val (env, this.ctxRef);
