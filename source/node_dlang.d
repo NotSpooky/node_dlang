@@ -837,16 +837,14 @@ struct TypedArray (Element) {
 }
 
 private size_t tArrLastId = 0;
-// Keeps them also alive on the D side.
-bool [void *] aliveTypedArrays;
 
+import core.memory : GC;
 private extern (C) void onTypedArrayFinalize (
   napi_env env
   , void * finalizeData
   , void * hint
 ) {
-  assert (finalizeData in aliveTypedArrays);
-  aliveTypedArrays.remove (finalizeData);
+  GC.removeRoot (finalizeData);
 }
 
 /// Note: The array data must be kept alive in D.
@@ -858,6 +856,11 @@ napi_status typedArrayToNapi (T)(
   napi_value arrayBuffer;
   napi_finalize finalizeCb;
   auto arrPtr = array.internal.ptr;
+  // Keep it alive on D side;
+  GC.addRoot (arrPtr);
+  // Also ensure that a moving collector does not relocate the object.
+  GC.setAttr (arrPtr, GC.BlkAttr.NO_MOVE);
+
   auto status = napi_create_external_arraybuffer (
     env
     , arrPtr
@@ -867,16 +870,7 @@ napi_status typedArrayToNapi (T)(
     , & arrayBuffer
   );
   assert (status == napi_status.napi_ok);
-  aliveTypedArrays [arrPtr] = true;
-  /+
-  auto status = napi_create_arraybuffer (
-    env
-    , T.sizeof * array.internal.length
-    , & arrLocation
-    , & arrayBuffer
-  );
-  *toRet = arrayBuffer;
-  return status;+/
+
   return napi_create_typedarray (
     env
     , TypedArray!T.type
