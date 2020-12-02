@@ -55,6 +55,12 @@ auto duplicateArray (int [] toDuplicate) {
   return toDuplicate.map!`a * 2`.array;
 }
 
+// Note: TypedArrays must keep their data alive on D's side.
+auto typedArrayData = [2f, 3f, 5.5f];
+auto returnsTypedArray () {
+  return TypedArray!float (typedArrayData);
+}
+
 // You can receive callbacks with delegates.
 auto receivesCallback (int delegate () getSomeInt) {
   int calledFromJS = getSomeInt ();
@@ -241,6 +247,7 @@ mixin exportToJs!(
   , duplicateAnInteger
   , concatText
   , duplicateArray
+  , returnsTypedArray
   , useRequire
   , returnsInt
   , returnsDouble

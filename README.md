@@ -6,16 +6,13 @@ Tested on 64 bit Linux and Windows with LDC and DMD compilers.
 
 # Features
 ## Implemented
-Conversion between Javascript types and D's bool, int, float, double, string, wstring, arrays, V \[string\], JSObj (statically described), JSVar, functions, function pointers, pointers to delegates, algebraics, nullables and POD structs.
+Conversion between Javascript types and D's bool, int, float, double, string, wstring, arrays (to JS arrays and TypedArrays), V \[string\], JSObj (statically described), JSVar, functions, function pointers, pointers to delegates, algebraics, nullables and POD structs.
 
 The raw N-API can also be used and there's automatic conversions for napi\_values.
 
 Ability to create JS scopes with inJSScope function.
 
 Ability to execute functions on module load with MainFunction template.
-
-## Coming soon
-Ability to select between Javascipt's ArrayBuffer and Array when dealing with arrays.
 
 # Requirements
 Just a D compiler and DUB package manager (usually included with the compiler).

@@ -19,7 +19,12 @@ assert (res > 30.50 && res < 30.51);
 assert (nativeModule.concatText ("Hello there!", "General kenobi") == "Hello there!\nGeneral kenobi");
 
 const expected = [2,4,6];
-assert (nativeModule.duplicateArray ([1,2,3]).every((value, index) => value === expected[index]));
+assert (nativeModule.duplicateArray ([1,2,3]).every((value, index) => value === expected [index]));
+
+const typedArr = nativeModule.returnsTypedArray ();
+assert (typedArr [0] == 2);
+assert (typedArr [1] == 3);
+assert (typedArr [2] == 5.5);
 
 // If you want to use pseudo globals such as require, they might not be accesible
 // from 'global' in D. So the easiest way usually is to send the function as an

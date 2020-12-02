@@ -788,6 +788,8 @@ napi_status boolToNapi (napi_env env, bool toConvert, napi_value * toRet) {
   return napi_get_boolean (env, toConvert, toRet);
 }
 
+// O(n) operation. Use BufferArrays to avoid element-by-element JS object 
+// creation.
 napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
   assert (toRet != null);
   auto status = napi_create_array_with_length (env, array.length, toRet);
@@ -800,6 +802,89 @@ napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
     }) (env);
   }
   return status;
+}
+
+/// Note: No conversion implemented for Uint8ClampedArray.
+struct TypedArray (Element) {
+  this (Element [] internal) {
+    this.internal = internal;
+  }
+  Element [] internal;
+  alias internal this;
+  static if (is (Element == byte)) {
+    enum type = napi_typedarray_type.napi_int8_array;
+  } else static if (is (Element == ubyte)) {
+    enum type = napi_typedarray_type.napi_uint8_array;
+  } else static if (is (Element == short)) {
+    enum type = napi_typedarray_type.napi_int16_array;
+  } else static if (is (Element == ushort)) {
+    enum type = napi_typedarray_type.napi_uint16_array;
+  } else static if (is (Element == int)) {
+    enum type = napi_typedarray_type.napi_int32_array;
+  } else static if (is (Element == uint)) {
+    enum type = napi_typedarray_type.napi_uint32_array;
+  } else static if (is (Element == float)) {
+    enum type = napi_typedarray_type.napi_float32_array;
+  } else static if (is (Element == double)) {
+    enum type = napi_typedarray_type.napi_float64_array;
+  } else static if (is (Element == long)) {
+    enum type = napi_typedarray_type.napi_bigint64_array;
+  } else static if (is (Element == ulong)) {
+    enum type = napi_typedarray_type.napi_biguint64_array;
+  } else {
+    static assert (0, `Cannot make TypedArray of ` ~ Element.stringof);
+  }
+}
+
+private size_t tArrLastId = 0;
+// Keeps them also alive on the D side.
+bool [void *] aliveTypedArrays;
+
+private extern (C) void onTypedArrayFinalize (
+  napi_env env
+  , void * finalizeData
+  , void * hint
+) {
+  assert (finalizeData in aliveTypedArrays);
+  aliveTypedArrays.remove (finalizeData);
+}
+
+/// Note: The array data must be kept alive in D.
+napi_status typedArrayToNapi (T)(
+  napi_env env
+  , ref TypedArray!T array
+  , napi_value * toRet
+) {
+  napi_value arrayBuffer;
+  napi_finalize finalizeCb;
+  auto arrPtr = array.internal.ptr;
+  auto status = napi_create_external_arraybuffer (
+    env
+    , arrPtr
+    , T.sizeof * array.internal.length
+    , & onTypedArrayFinalize
+    , null
+    , & arrayBuffer
+  );
+  assert (status == napi_status.napi_ok);
+  aliveTypedArrays [arrPtr] = true;
+  /+
+  auto status = napi_create_arraybuffer (
+    env
+    , T.sizeof * array.internal.length
+    , & arrLocation
+    , & arrayBuffer
+  );
+  *toRet = arrayBuffer;
+  return status;+/
+  return napi_create_typedarray (
+    env
+    , TypedArray!T.type
+    , array.internal.length
+    , arrayBuffer
+    , 0
+    , toRet
+  );
 }
 
 napi_status aaToNapi (V)(napi_env env, V [string] toConvert, napi_value * toRet) {
@@ -953,6 +1038,8 @@ template toNapi (alias T) {
       static assert (0, `Please use extern (C) for napi callbacks`);
     }
     alias toNapi = callbackToNapi;
+  } else static if (is (T == TypedArray!A, A)) {
+    alias toNapi = typedArrayToNapi;
   } else static if (isStaticArray!T) {
     alias toNapi = arrayToNapi;
   } else static if (is (T == A[], A)) {
