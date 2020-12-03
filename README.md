@@ -5,7 +5,7 @@ Package to create native NodeJS modules based on [N-API](https://nodejs.org/api/
 Tested on 64 bit Linux and Windows with LDC and DMD compilers.
 
 # Features
-## Implemented
+
 Conversion between Javascript types and D's bool, int, float, double, string, wstring, arrays (to JS arrays and TypedArrays), V \[string\], JSObj (statically described), JSVar, functions, function pointers, pointers to delegates, algebraics, nullables and POD structs.
 
 The raw N-API can also be used and there's automatic conversions for napi\_values.
@@ -19,6 +19,8 @@ Just a D compiler and DUB package manager (usually included with the compiler).
 
 JavaScript is not necessary to generate the modules but NodeJS is needed to test the generated file.
 # Usage
+Check out the [wiki](https://github.com/NotSpooky/node_dlang/wiki "wiki")
+
 Create a DUB project with:
 ```shell
 dub init
