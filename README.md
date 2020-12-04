@@ -19,7 +19,7 @@ Just a D compiler and DUB package manager (usually included with the compiler).
 
 JavaScript is not necessary to generate the modules but NodeJS is needed to test the generated file.
 # Usage
-Check out the [wiki](https://github.com/NotSpooky/node_dlang/wiki "wiki")
+Check out the [wiki](https://github.com/NotSpooky/node_dlang/wiki/Introduction "wiki")
 
 Create a DUB project with:
 ```shell
