@@ -42,7 +42,7 @@ auto constructor (RetType, T ...)(napi_env env, napi_value constructorNapi, T ar
     , asArr.ptr
     , &toRet
   );
-  assert (status == napi_status.napi_ok);
+  assert (status == napi_status.napi_ok, `Error calling JS constructror`);
   return fromNapi!RetType (env, toRet);
 }
 
@@ -694,8 +694,15 @@ auto getTypedArray (T)(napi_env env, napi_value napiVal, TypedArray!T * toRet) {
     , & arrayBuffer
     , & offset
   );
-  // TODO: Check type.
-  toRet.internal = cast (T []) data [0 .. length / T.sizeof];
+
+  enum expectedType = TypedArray!T.type;
+  assert (
+    // ubyte accepts both clamped and unclamped arrays.
+    expectedType == type || (is (T == ubyte)
+      && type == napi_typedarray_type.napi_uint8_clamped_array)
+    , `TypedArray type doesn't match (make sure signedness is correct too)`
+  );
+  toRet.internal = cast (T []) data [0 .. length];
   return status;
 }
 
@@ -721,7 +728,7 @@ template fromNapiB (T) {
   } else static if (is (T == long)) {
     alias fromNapiB = napi_get_value_int64;
   } else static if (is (T == ulong)) {
-    alias fromNapiB = napi_get_value_uint64;
+    alias fromNapiB = napi_get_value_bigint_uint64;
   } else static if (is (T == double)) {
     alias fromNapiB = napi_get_value_double;
   } else static if (is (T == float)) {
@@ -828,8 +835,14 @@ napi_status arrayToNapi (F)(napi_env env, F[] array, napi_value * toRet) {
 
 /// Note: No conversion implemented for Uint8ClampedArray.
 struct TypedArray (Element) {
+  /// Constructor that uses the provided internal array.
   this (Element [] internal) {
     this.internal = internal;
+  }
+  /// Constructor that allocates on JS mem.
+  this (napi_env env, uint length) {
+    auto buffer = global (env, `Uint8Array`).constructor (length);
+    this = cast (TypedArray!Element) buffer;
   }
   Element [] internal;
   alias internal this;
@@ -1025,7 +1038,7 @@ template toNapi (alias T) {
   } else static if (is (T == long)) {
     alias toNapi = napi_create_int64;
   } else static if (is (T == ulong)) {
-    alias toNapi = napi_create_uint64;
+    alias toNapi = napi_create_bigint_uint64;
   } else static if (is (T : double)) {
     alias toNapi = napi_create_double;
   } else static if (is (T == V [string], V)) {
