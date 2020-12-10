@@ -679,6 +679,26 @@ auto getArray (A)(napi_env env, napi_value napiVal, A [] * toRet) {
   return napi_status.napi_ok;
 }
 
+auto getTypedArray (T)(napi_env env, napi_value napiVal, TypedArray!T * toRet) {
+  napi_typedarray_type type;
+  size_t length;
+  void * data;
+  napi_value arrayBuffer;
+  size_t offset;
+  auto status = napi_get_typedarray_info (
+    env
+    , napiVal
+    , & type
+    , & length
+    , & data
+    , & arrayBuffer
+    , & offset
+  );
+  // TODO: Check type.
+  toRet.internal = cast (T []) data [0 .. length / T.sizeof];
+  return status;
+}
+
 auto getStruct (S)(napi_env env, napi_value napiVal, S * toRet) {
   *toRet = S.init;
   foreach (fieldName; FieldNameTuple!S) {
@@ -706,6 +726,8 @@ template fromNapiB (T) {
     alias fromNapiB = napi_get_value_double;
   } else static if (is (T == float)) {
     alias fromNapiB = getFloat;
+  } else static if (is (T == TypedArray!A, A)) {
+    alias fromNapiB = getTypedArray;
   } else static if (is (T == V [string], V)) {
     alias fromNapiB = getAA;
   } else static if (isSomeString!T) {
