@@ -702,7 +702,7 @@ auto getTypedArray (T)(napi_env env, napi_value napiVal, TypedArray!T * toRet) {
       && type == napi_typedarray_type.napi_uint8_clamped_array)
     , `TypedArray type doesn't match (make sure signedness is correct too)`
   );
-  toRet.internal = cast (T []) data [0 .. length];
+  toRet.internal = (cast (T *) data) [0 .. length];
   return status;
 }
 
