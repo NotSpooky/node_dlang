@@ -1,14 +1,14 @@
 ![Actions CI](https://github.com/NotSpooky/node_dlang/workflows/Type%20example%20test/badge.svg?branch=master)
 ![License](https://img.shields.io/badge/license-MIT-9cf)
 # Node dlang
-Package to create native NodeJS modules based on [N-API](https://nodejs.org/api/n-api.html "N-API").
+Package to create native NodeJS modules based on [Node-API](https://nodejs.org/api/n-api.html "N-API").
 Tested on 64 bit Linux and Windows with LDC and DMD compilers.
 
 # Features
 
 Conversion between Javascript types and D's bool, int, float, double, string, wstring, arrays (to JS arrays and TypedArrays), V \[string\], JSObj (statically described), JSVar, functions, function pointers, pointers to delegates, algebraics, nullables and POD structs.
 
-The raw N-API can also be used and there's automatic conversions for napi\_values.
+The raw Node-API can also be used and there's automatic conversions for napi\_values.
 
 Ability to create JS scopes with inJSScope function.
 
