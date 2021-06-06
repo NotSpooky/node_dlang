@@ -131,7 +131,7 @@ class JSException : Exception {
     napi_value jsException
     , string message = `JS Exception`
     , string file = __FILE__
-    , ulong line = cast (ulong) __LINE__
+    , size_t line = __LINE__
     , Throwable nextInChain = null) {
     this.jsException = jsException;
     super (message, file, line, nextInChain);
